@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"scopr/internal/picker"
 	"scopr/internal/scope"
 	"scopr/internal/scopefile"
+	"scopr/internal/ui"
 	"scopr/internal/workspace"
 )
 
@@ -195,14 +197,23 @@ func runInfer(task, prompt string, verbose bool) int {
 	ctx, cancel := context.WithTimeout(context.Background(), surveyTimeout)
 	defer cancel()
 
-	fmt.Fprintln(os.Stderr, "surveying the workspace...")
+	var (
+		suggestions []dispatch.Suggestion
+		cfg         = dispatch.Config{Root: root, Task: task}
+	)
 
-	cfg := dispatch.Config{Root: root, Task: task}
-	if verbose {
-		cfg.Trace = os.Stderr
+	err = ui.RunSurvey(ctx, task, func(ctx context.Context, trace io.Writer) error {
+		if verbose {
+			cfg.Trace = trace
+		}
+		var err error
+		suggestions, err = dispatch.Infer(ctx, cfg)
+		return err
+	})
+
+	if errors.Is(err, ui.ErrCancelled) {
+		return 0
 	}
-
-	suggestions, err := dispatch.Infer(ctx, cfg)
 
 	var args []string
 
