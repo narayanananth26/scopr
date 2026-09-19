@@ -5,9 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"scopr/internal/launch"
+	"scopr/internal/picker"
+	"scopr/internal/repo"
 	"scopr/internal/scope"
 	"scopr/internal/scopefile"
 	"scopr/internal/workspace"
@@ -118,13 +121,70 @@ func runRename(args []string) int {
 	return 0
 }
 
+// choose runs the picker, falling back to a printed listing when fzf is
+// missing so a bare scopr still says what could have been picked.
+func choose(root string) ([]string, int) {
+	args, err := picker.Pick(root)
+
+	switch {
+	case err == nil:
+		return args, 0
+
+	case errors.Is(err, picker.ErrCancelled):
+		return nil, 0
+
+	case errors.Is(err, picker.ErrUnavailable):
+		fmt.Fprintln(os.Stderr, "fzf is not installed, so there is nothing to pick with.")
+		fmt.Fprintln(os.Stderr, "Name a repository or scope, or install fzf. Available:")
+		fmt.Fprintln(os.Stderr)
+		printChoices(root)
+		return nil, 1
+
+	default:
+		fmt.Fprintln(os.Stderr, err)
+		return nil, 1
+	}
+}
+
+func printChoices(root string) {
+	if names, err := scopefile.List(root); err == nil {
+		for _, name := range names {
+			repos, err := scopefile.Load(root, name)
+			if err != nil {
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "  %s%-16s %s\n", scope.Prefix, name, strings.Join(repos, " "))
+		}
+	}
+
+	repos, err := repo.List(root)
+	if err != nil {
+		return
+	}
+	for _, r := range repos {
+		rel, err := filepath.Rel(root, r.Path)
+		if err != nil {
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "  %s\n", rel)
+	}
+}
+
 // runLaunch resolves names to a scope and starts a session in the primary
-// repo, returning claude's exit code.
+// repo, returning claude's exit code. With no names it asks.
 func runLaunch(args []string, prompt string) int {
 	root, err := findRoot()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
+	}
+
+	if len(args) == 0 {
+		picked, code := choose(root)
+		if len(picked) == 0 {
+			return code
+		}
+		args = picked
 	}
 
 	s, err := scope.ResolveArgs(root, args)
@@ -145,6 +205,7 @@ func usage() {
 	fmt.Fprint(os.Stderr, `scopr launches Claude Code scoped to chosen repositories.
 
 usage:
+  scopr                            pick a scope or repos interactively
   scopr [flags] <repo|@scope>...   start a session; the first repo becomes the working directory
   scopr --save <name> <repo>...    save a scope under that name
   scopr --rename <old> <new>       rename a saved scope
@@ -184,9 +245,6 @@ func main() {
 			os.Exit(1)
 		}
 		os.Exit(runSave(strings.TrimPrefix(*save, scope.Prefix), args))
-	case len(args) == 0:
-		usage()
-		os.Exit(1)
 	default:
 		os.Exit(runLaunch(args, *prompt))
 	}
