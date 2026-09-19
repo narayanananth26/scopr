@@ -1,13 +1,17 @@
 package main
 
 import (
+	"bufio"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"scopr/internal/dispatch"
 	"scopr/internal/launch"
 	"scopr/internal/picker"
 	"scopr/internal/repo"
@@ -188,6 +192,81 @@ func printChoices(root string) {
 	}
 }
 
+// surveyTimeout is generous: the survey is a 15-30 second call with an
+// observed 21-second tail.
+const surveyTimeout = 90 * time.Second
+
+// confirm asks whether to use the suggested scope. Inference suggests; the
+// person decides, because a wrongly narrow scope fails by the agent not
+// finding code rather than by saying so.
+func confirm() (approved, edit bool) {
+	fmt.Fprint(os.Stderr, "\nstart here? [Y]es / [e]dit / [n]o: ")
+
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && line == "" {
+		return false, false
+	}
+
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "", "y", "yes":
+		return true, false
+	case "e", "edit":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+// runInfer surveys the workspace for a task, shows what it found, and starts a
+// session once approved.
+func runInfer(task, prompt string) int {
+	root, err := findRoot()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), surveyTimeout)
+	defer cancel()
+
+	fmt.Fprintln(os.Stderr, "surveying the workspace...")
+
+	suggestions, err := dispatch.Infer(ctx, dispatch.Config{Root: root, Task: task})
+
+	var args []string
+
+	switch {
+	case err == nil:
+		fmt.Fprintln(os.Stderr)
+		for _, s := range suggestions {
+			fmt.Fprintf(os.Stderr, "  %-28s %s\n", s.Name, s.Reason)
+			args = append(args, s.Name)
+		}
+
+		approved, edit := confirm()
+		switch {
+		case approved:
+		case edit:
+			args = nil
+		default:
+			return 0
+		}
+
+	case errors.Is(err, dispatch.ErrDeclined):
+		// Nothing found is not a failure; fall through to picking by hand.
+		fmt.Fprintf(os.Stderr, "%v\n\npick instead:\n", err)
+
+	default:
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	if prompt == "" {
+		prompt = task
+	}
+	return runLaunch(args, prompt)
+}
+
 // runLaunch resolves names to a scope and starts a session in the primary
 // repo, returning claude's exit code. With no names it asks.
 func runLaunch(args []string, prompt string) int {
@@ -225,6 +304,7 @@ func usage() {
 usage:
   scopr                            pick a scope or repos interactively
   scopr [flags] <repo|@scope>...   start a session; the first repo becomes the working directory
+  scopr --infer <task>             suggest a scope for the task, then start
   scopr --save <name> <repo>...    save a scope under that name
   scopr --rename <old> <new>       rename a saved scope
   scopr --delete <name>            delete a saved scope
@@ -248,6 +328,7 @@ func main() {
 	save := flag.String("save", "", "save the given repositories under this scope name")
 	del := flag.String("delete", "", "delete the named scope")
 	prompt := flag.String("p", "", "prompt to submit on start")
+	infer := flag.String("infer", "", "suggest a scope for this task")
 	flag.Parse()
 
 	args := flag.Args()
@@ -261,6 +342,8 @@ func main() {
 		os.Exit(runRename(args))
 	case *del != "":
 		os.Exit(runDelete(*del))
+	case *infer != "":
+		os.Exit(runInfer(*infer, *prompt))
 	case *save != "":
 		if len(args) == 0 {
 			fmt.Fprintln(os.Stderr, "usage: scopr --save <name> <repo>...")
