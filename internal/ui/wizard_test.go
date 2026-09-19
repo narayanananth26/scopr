@@ -79,8 +79,11 @@ func TestWizardBlankNameSavesNothing(t *testing.T) {
 // The name step says what will happen before you commit to it.
 func TestWizardNameStepExplainsItself(t *testing.T) {
 	blank := wizard().View()
-	if !strings.Contains(blank, "not be saved") {
+	if !strings.Contains(blank, "not saved") {
 		t.Errorf("blank name does not say it will not be saved:\n%s", blank)
+	}
+	if !strings.Contains(blank, "no tab label") {
+		t.Errorf("blank name does not say the tab goes unlabelled:\n%s", blank)
 	}
 
 	existing := type_(wizard(), "surfaces").View()
@@ -421,5 +424,24 @@ func TestTagViewMarksTheCursor(t *testing.T) {
 		if strings.HasPrefix(strings.TrimSpace(line), ">") && !strings.Contains(line, m[1].Rel) {
 			t.Errorf("marker is not on the cursor row: %q", line)
 		}
+	}
+}
+
+// A name labels the terminal tab even when the scope is not saved, so Label
+// reports it where Name deliberately does not.
+func TestWizardLabelIsTheTypedName(t *testing.T) {
+	w := type_(wizard(), "surfaces")
+
+	if w.Label() != "surfaces" {
+		t.Errorf("Label = %q, want surfaces", w.Label())
+	}
+	if w.Name() != "" {
+		t.Errorf("Name = %q; an existing scope needs no saving", w.Name())
+	}
+}
+
+func TestWizardLabelEmptyWhenUnnamed(t *testing.T) {
+	if got := wizard().Label(); got != "" {
+		t.Errorf("Label = %q, want empty", got)
 	}
 }

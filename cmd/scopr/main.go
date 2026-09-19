@@ -221,7 +221,7 @@ func runInit() int {
 		fmt.Fprintf(os.Stderr, "saved %s%s\n", scope.Prefix, name)
 	}
 
-	return runLaunch(repos, w.Prompt())
+	return runLaunch(repos, w.Prompt(), w.Label())
 }
 
 // choose opens the editor with nothing chosen.
@@ -301,12 +301,12 @@ func runInfer(task, prompt string, verbose bool) int {
 	if prompt == "" {
 		prompt = task
 	}
-	return runLaunch(args, prompt)
+	return runLaunch(args, prompt, task)
 }
 
 // runLaunch resolves names to a scope and starts a session in the primary
 // repo, returning claude's exit code. With no names it asks.
-func runLaunch(args []string, prompt string) int {
+func runLaunch(args []string, prompt, name string) int {
 	root, err := findRoot()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -327,12 +327,21 @@ func runLaunch(args []string, prompt string) int {
 		return 1
 	}
 
-	code, err := launch.Run(launch.Config{Scope: s, Prompt: prompt})
+	code, err := launch.Run(launch.Config{Scope: s, Prompt: prompt, Name: name})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	return code
+}
+
+// label names a session from its arguments: a saved scope names itself, a
+// list of repositories does not.
+func label(args []string) string {
+	if len(args) == 1 && strings.HasPrefix(args[0], scope.Prefix) {
+		return strings.TrimPrefix(args[0], scope.Prefix)
+	}
+	return ""
 }
 
 func usage() {
@@ -395,6 +404,6 @@ func main() {
 		}
 		os.Exit(runSave(strings.TrimPrefix(*save, scope.Prefix), args))
 	default:
-		os.Exit(runLaunch(args, *prompt))
+		os.Exit(runLaunch(args, *prompt, label(args)))
 	}
 }

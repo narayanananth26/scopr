@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"scopr/internal/scope"
 )
@@ -16,6 +17,10 @@ type Config struct {
 	Scope  scope.Scope
 	Prompt string
 	Bin    string
+
+	// Name labels the terminal tab. Empty falls back to the prompt, then to
+	// the repositories.
+	Name string
 }
 
 func (c Config) bin() string {
@@ -73,8 +78,17 @@ func Run(cfg Config) (int, error) {
 		return 0, err
 	}
 
+	// Under tmux the window carries the label; elsewhere the scope travels in
+	// the environment for a status line to show.
+	if InTmux() {
+		name, auto := tmuxWindow()
+		_ = tmuxTitle(Title(cfg.Name, cfg.Prompt, cfg.Scope))
+		defer restoreTmux(name, auto)
+	}
+
 	cmd := exec.Command(cfg.bin(), args...)
 	cmd.Dir = cfg.Scope.Primary().Path
+	cmd.Env = Env(cfg)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -90,4 +104,23 @@ func Run(cfg Config) (int, error) {
 	}
 
 	return 0, nil
+}
+
+// Env is the session's environment, carrying the scope so a status line or
+// anything else inside the session can show it.
+//
+// Exported rather than injected through --settings: a status line the person
+// already configured stays theirs, and scopr does not have to reason about
+// whether --settings replaces the rest of their settings.
+func Env(cfg Config) []string {
+	names := make([]string, 0, len(cfg.Scope.Repos))
+	for _, r := range cfg.Scope.Repos {
+		names = append(names, r.Name)
+	}
+
+	return append(os.Environ(),
+		"SCOPR_SCOPE="+strings.Join(names, " "),
+		"SCOPR_PRIMARY="+cfg.Scope.Primary().Name,
+		"SCOPR_TITLE="+Title(cfg.Name, cfg.Prompt, cfg.Scope),
+	)
 }

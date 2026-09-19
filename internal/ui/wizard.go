@@ -82,6 +82,10 @@ func (w Wizard) Name() string {
 	return w.name
 }
 
+// Label is what the session was called, whether or not it will be saved. A
+// name is useful for the terminal tab even when nothing is written.
+func (w Wizard) Label() string { return strings.TrimSpace(w.name) }
+
 // Repos is the chosen scope.
 func (w Wizard) Repos() []string { return w.scope.Result() }
 
@@ -289,7 +293,7 @@ func (w Wizard) viewName() string {
 	case w.Err != nil:
 		b.WriteString(dim.Render("  "+w.Err.Error()) + "\n")
 	case name == "":
-		b.WriteString(dim.Render("  unnamed - the scope will not be saved") + "\n")
+		b.WriteString(dim.Render("  unnamed - no tab label, and the scope is not saved") + "\n")
 	case w.existing():
 		b.WriteString(dim.Render("  loads "+scopePrefix+name) + "\n")
 	default:
