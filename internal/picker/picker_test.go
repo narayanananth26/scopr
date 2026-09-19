@@ -39,11 +39,13 @@ type script struct {
 	answers [][]string
 	errs    []error
 	offered [][]string
+	prompts []Prompt
 	calls   int
 }
 
-func (s *script) choose(_ string, items []string, _ bool) ([]string, error) {
-	s.offered = append(s.offered, items)
+func (s *script) choose(p Prompt) ([]string, error) {
+	s.offered = append(s.offered, p.Items)
+	s.prompts = append(s.prompts, p)
 	i := s.calls
 	s.calls++
 
@@ -200,5 +202,110 @@ func TestEmptyWorkspaceErrors(t *testing.T) {
 	s := &script{}
 	if _, err := pick(root, s.choose); err == nil {
 		t.Fatal("pick on an empty workspace returned no error")
+	}
+}
+
+func TestTrimKeepsMarked(t *testing.T) {
+	s := &script{answers: [][]string{{"services/api", "apps/web"}}}
+
+	got, err := trim([]string{"services/api", "apps/web", "apps/shared"}, s.choose)
+	if err != nil {
+		t.Fatalf("trim: %v", err)
+	}
+	if want := []string{"services/api", "apps/web"}; !slices.Equal(got, want) {
+		t.Errorf("trim = %v, want %v", got, want)
+	}
+}
+
+// Everything arrives marked, so answering means dropping rather than picking.
+func TestTrimPreselectsEverything(t *testing.T) {
+	s := &script{answers: [][]string{{"services/api"}}}
+
+	if _, err := trim([]string{"services/api", "apps/web"}, s.choose); err != nil {
+		t.Fatalf("trim: %v", err)
+	}
+	if len(s.prompts) != 1 {
+		t.Fatalf("asked %d times, want 1", len(s.prompts))
+	}
+	if !s.prompts[0].Preselect {
+		t.Error("trim did not preselect; the person would have to re-mark everything")
+	}
+	if !s.prompts[0].Multi {
+		t.Error("trim is not multi-select")
+	}
+}
+
+func TestTrimOffersOnlyTheGivenNames(t *testing.T) {
+	s := &script{answers: [][]string{{"services/api"}}}
+	names := []string{"services/api", "apps/web"}
+
+	if _, err := trim(names, s.choose); err != nil {
+		t.Fatalf("trim: %v", err)
+	}
+	if !slices.Equal(s.offered[0], names) {
+		t.Errorf("offered %v, want exactly %v", s.offered[0], names)
+	}
+}
+
+func TestTrimUnmarkingEverythingCancels(t *testing.T) {
+	s := &script{answers: [][]string{{}}}
+
+	if _, err := trim([]string{"services/api"}, s.choose); !errors.Is(err, ErrCancelled) {
+		t.Fatalf("trim error = %v, want ErrCancelled", err)
+	}
+}
+
+func TestTrimEmptyInputCancels(t *testing.T) {
+	s := &script{}
+
+	if _, err := trim(nil, s.choose); !errors.Is(err, ErrCancelled) {
+		t.Fatalf("trim error = %v, want ErrCancelled", err)
+	}
+	if s.calls != 0 {
+		t.Error("trim asked with nothing to offer")
+	}
+}
+
+// Order is the suggestion order, since the first kept repo becomes primary.
+func TestTrimPreservesOrder(t *testing.T) {
+	s := &script{answers: [][]string{{"apps/web", "services/api"}}}
+
+	got, err := trim([]string{"apps/web", "services/api"}, s.choose)
+	if err != nil {
+		t.Fatalf("trim: %v", err)
+	}
+	if got[0] != "apps/web" {
+		t.Errorf("trim = %v, want apps/web first", got)
+	}
+}
+
+// Preselect must reach fzf as a bind, not merely be set on the Prompt.
+func TestFzfArgsPreselect(t *testing.T) {
+	got := fzfArgs(Prompt{Label: "x> ", Multi: true, Preselect: true})
+
+	i := slices.Index(got, "--bind")
+	if i == -1 || i+1 >= len(got) || got[i+1] != "start:select-all" {
+		t.Errorf("preselect did not become a bind: %v", got)
+	}
+}
+
+func TestFzfArgsSingleSelect(t *testing.T) {
+	got := fzfArgs(Prompt{Label: "x> "})
+
+	for _, unwanted := range []string{"--multi", "--bind"} {
+		if slices.Contains(got, unwanted) {
+			t.Errorf("single-select prompt passed %s: %v", unwanted, got)
+		}
+	}
+}
+
+func TestFzfArgsMultiWithoutPreselect(t *testing.T) {
+	got := fzfArgs(Prompt{Label: "x> ", Multi: true})
+
+	if !slices.Contains(got, "--multi") {
+		t.Errorf("multi prompt did not pass --multi: %v", got)
+	}
+	if slices.Contains(got, "--bind") {
+		t.Errorf("multi prompt preselected without being asked: %v", got)
 	}
 }

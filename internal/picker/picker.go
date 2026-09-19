@@ -22,9 +22,22 @@ var (
 	ErrCancelled = errors.New("selection cancelled")
 )
 
-// Chooser presents items and returns those selected. Injected so the
+// Prompt is one question put to the person.
+type Prompt struct {
+	Label string
+	Items []string
+
+	// Multi allows more than one answer.
+	Multi bool
+
+	// Preselect marks every item to begin with, so answering means unmarking
+	// what should go rather than marking what should stay.
+	Preselect bool
+}
+
+// Chooser presents a Prompt and returns what was selected. Injected so the
 // selection logic is testable without a terminal.
-type Chooser func(prompt string, items []string, multi bool) ([]string, error)
+type Chooser func(Prompt) ([]string, error)
 
 // Pick asks for a scope or a primary repository, then for any additional
 // repositories, and returns arguments in the form ResolveArgs accepts.
@@ -65,6 +78,40 @@ func pick(root string, choose Chooser) ([]string, error) {
 	return append([]string{first}, rest...), nil
 }
 
+// Trim shows the given names all marked and returns those kept, in order.
+// Unmarking everything is a cancellation.
+//
+// It can only remove. Adding a repository the survey missed, or changing which
+// one is primary, means declining and naming them instead.
+func Trim(names []string) ([]string, error) {
+	return trim(names, fzf)
+}
+
+func trim(names []string, choose Chooser) ([]string, error) {
+	if len(names) == 0 {
+		return nil, ErrCancelled
+	}
+
+	picked, err := choose(Prompt{
+		Label:     "keep (shift-tab to drop)> ",
+		Items:     names,
+		Multi:     true,
+		Preselect: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(picked) == 0 {
+		return nil, ErrCancelled
+	}
+
+	kept := make([]string, 0, len(picked))
+	for _, p := range picked {
+		kept = append(kept, field(p))
+	}
+	return kept, nil
+}
+
 func chooseFirst(root string, choose Chooser, scopes []string, repos []repo.Repo) (string, error) {
 	items := make([]string, 0, len(scopes)+len(repos))
 
@@ -85,7 +132,7 @@ func chooseFirst(root string, choose Chooser, scopes []string, repos []repo.Repo
 		return "", errors.New("no scopes or repositories in this workspace")
 	}
 
-	picked, err := choose("scope or primary repo> ", items, false)
+	picked, err := choose(Prompt{Label: "scope or primary repo> ", Items: items})
 	if err != nil {
 		return "", err
 	}
@@ -107,7 +154,7 @@ func chooseRest(root string, choose Chooser, repos []repo.Repo, exclude string) 
 		return nil, nil
 	}
 
-	picked, err := choose("also in scope (optional)> ", items, true)
+	picked, err := choose(Prompt{Label: "also in scope (tab to mark)> ", Items: items, Multi: true})
 	// Choosing nothing here is a single-repo scope, not a cancellation.
 	if errors.Is(err, ErrCancelled) {
 		return nil, nil
@@ -138,27 +185,35 @@ func field(line string) string {
 	return strings.TrimSpace(name)
 }
 
+// fzfArgs translates a Prompt into fzf flags.
+func fzfArgs(p Prompt) []string {
+	args := []string{
+		"--prompt", p.Label,
+		"--height", "40%",
+		"--layout", "reverse",
+		"--delimiter", "\t",
+		"--with-nth", "1,2",
+		"--header-first",
+	}
+	if p.Multi {
+		args = append(args, "--multi", "--header", "tab to mark, shift-tab to unmark, enter to confirm, esc for none")
+	}
+	if p.Preselect {
+		args = append(args, "--bind", "start:select-all")
+	}
+	return args
+}
+
 // fzf runs the real picker. It draws on the terminal and writes the selection
 // to stdout, so only stdout is captured.
-func fzf(prompt string, items []string, multi bool) ([]string, error) {
+func fzf(p Prompt) ([]string, error) {
 	bin, err := exec.LookPath("fzf")
 	if err != nil {
 		return nil, ErrUnavailable
 	}
 
-	args := []string{
-		"--prompt", prompt,
-		"--height", "40%",
-		"--layout", "reverse",
-		"--delimiter", "\t",
-		"--with-nth", "1,2",
-	}
-	if multi {
-		args = append(args, "--multi", "--header", "tab to select, enter to confirm, esc for none")
-	}
-
-	cmd := exec.Command(bin, args...)
-	cmd.Stdin = strings.NewReader(strings.Join(items, "\n"))
+	cmd := exec.Command(bin, fzfArgs(p)...)
+	cmd.Stdin = strings.NewReader(strings.Join(p.Items, "\n"))
 	cmd.Stderr = os.Stderr
 
 	out, err := cmd.Output()

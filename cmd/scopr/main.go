@@ -246,8 +246,20 @@ func runInfer(task, prompt string) int {
 		approved, edit := confirm()
 		switch {
 		case approved:
+
 		case edit:
-			args = nil
+			// Trim can only remove. Adding a missed repo, or changing which
+			// is primary, means declining and naming them.
+			kept, err := picker.Trim(args)
+			if errors.Is(err, picker.ErrCancelled) {
+				return 0
+			}
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			args = kept
+
 		default:
 			return 0
 		}
