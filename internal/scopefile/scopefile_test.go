@@ -261,3 +261,49 @@ func TestRenameRefusesExistingTarget(t *testing.T) {
 		}
 	}
 }
+
+func TestDeleteRemovesScope(t *testing.T) {
+	r := root(t)
+
+	if err := scopefile.Save(r, "seam", []string{"web"}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := scopefile.Delete(r, "seam"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	if _, err := scopefile.Load(r, "seam"); !errors.Is(err, scopefile.ErrNoSuchScope) {
+		t.Errorf("scope still loads after Delete: %v", err)
+	}
+	if _, err := os.Stat(scopefile.Path(r, "seam")); err == nil {
+		t.Error("scope file still on disk")
+	}
+}
+
+func TestDeleteMissingScope(t *testing.T) {
+	if err := scopefile.Delete(root(t), "nope"); !errors.Is(err, scopefile.ErrNoSuchScope) {
+		t.Fatalf("Delete error = %v, want ErrNoSuchScope", err)
+	}
+}
+
+// A name that escapes must not delete anything outside the scopes directory.
+func TestDeleteRejectsEscapingName(t *testing.T) {
+	parent := root(t)
+	r := filepath.Join(parent, "workspace")
+	if err := os.MkdirAll(r, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	victim := filepath.Join(parent, "keepme")
+	if err := os.WriteFile(victim, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write victim: %v", err)
+	}
+
+	escape := filepath.Join("..", "..", "keepme")
+	if err := scopefile.Delete(r, escape); !errors.Is(err, scopefile.ErrInvalidName) {
+		t.Fatalf("Delete error = %v, want ErrInvalidName", err)
+	}
+	if _, err := os.Stat(victim); err != nil {
+		t.Errorf("Delete removed a file outside the scopes directory: %v", err)
+	}
+}

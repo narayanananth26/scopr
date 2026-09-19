@@ -166,3 +166,19 @@ func Rename(root, from, to string) error {
 	}
 	return nil
 }
+
+// Delete removes a saved scope.
+func Delete(root, name string) error {
+	if err := validName(name); err != nil {
+		return err
+	}
+
+	err := os.Remove(Path(root, name))
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("%w: %q", ErrNoSuchScope, name)
+	}
+	if err != nil {
+		return fmt.Errorf("delete scope %q: %w", name, err)
+	}
+	return nil
+}

@@ -97,6 +97,24 @@ func runSave(name string, args []string) int {
 	return 0
 }
 
+func runDelete(name string) int {
+	root, err := findRoot()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	name = strings.TrimPrefix(name, scope.Prefix)
+
+	if err := scopefile.Delete(root, name); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	fmt.Fprintf(os.Stderr, "deleted %s%s\n", scope.Prefix, name)
+	return 0
+}
+
 func runRename(args []string) int {
 	if len(args) != 2 {
 		fmt.Fprintln(os.Stderr, "usage: scopr --rename <old> <new>")
@@ -209,6 +227,7 @@ usage:
   scopr [flags] <repo|@scope>...   start a session; the first repo becomes the working directory
   scopr --save <name> <repo>...    save a scope under that name
   scopr --rename <old> <new>       rename a saved scope
+  scopr --delete <name>            delete a saved scope
   scopr --list                     list saved scopes
   scopr --where                    print the workspace root
 
@@ -227,6 +246,7 @@ func main() {
 	list := flag.Bool("list", false, "list saved scopes")
 	rename := flag.Bool("rename", false, "rename a saved scope")
 	save := flag.String("save", "", "save the given repositories under this scope name")
+	del := flag.String("delete", "", "delete the named scope")
 	prompt := flag.String("p", "", "prompt to submit on start")
 	flag.Parse()
 
@@ -239,6 +259,8 @@ func main() {
 		os.Exit(runList())
 	case *rename:
 		os.Exit(runRename(args))
+	case *del != "":
+		os.Exit(runDelete(*del))
 	case *save != "":
 		if len(args) == 0 {
 			fmt.Fprintln(os.Stderr, "usage: scopr --save <name> <repo>...")
