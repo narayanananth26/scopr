@@ -219,7 +219,7 @@ func confirm() (approved, edit bool) {
 
 // runInfer surveys the workspace for a task, shows what it found, and starts a
 // session once approved.
-func runInfer(task, prompt string) int {
+func runInfer(task, prompt string, verbose bool) int {
 	root, err := findRoot()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -231,7 +231,12 @@ func runInfer(task, prompt string) int {
 
 	fmt.Fprintln(os.Stderr, "surveying the workspace...")
 
-	suggestions, err := dispatch.Infer(ctx, dispatch.Config{Root: root, Task: task})
+	cfg := dispatch.Config{Root: root, Task: task}
+	if verbose {
+		cfg.Trace = os.Stderr
+	}
+
+	suggestions, err := dispatch.Infer(ctx, cfg)
 
 	var args []string
 
@@ -325,6 +330,7 @@ usage:
 
 flags:
   -p <text>                        prompt to submit on start
+  --verbose                        with --infer, show the survey's tool calls
 
 An @name argument expands to the repositories that scope names, so scopes and
 plain repositories can be mixed. Flags must precede everything else.
@@ -341,6 +347,7 @@ func main() {
 	del := flag.String("delete", "", "delete the named scope")
 	prompt := flag.String("p", "", "prompt to submit on start")
 	infer := flag.String("infer", "", "suggest a scope for this task")
+	verbose := flag.Bool("verbose", false, "show the survey's tool calls and reasoning")
 	flag.Parse()
 
 	args := flag.Args()
@@ -355,7 +362,7 @@ func main() {
 	case *del != "":
 		os.Exit(runDelete(*del))
 	case *infer != "":
-		os.Exit(runInfer(*infer, *prompt))
+		os.Exit(runInfer(*infer, *prompt, *verbose))
 	case *save != "":
 		if len(args) == 0 {
 			fmt.Fprintln(os.Stderr, "usage: scopr --save <name> <repo>...")

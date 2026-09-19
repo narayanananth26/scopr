@@ -1,10 +1,12 @@
 package dispatch
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -35,6 +37,11 @@ type Config struct {
 	Task  string
 	Bin   string
 	Model string
+
+	// Trace receives a line per survey event when set: the greps it runs and
+	// what it concludes. Without it a wrong suggestion is opaque, and the
+	// three reasons it could be wrong need three different fixes.
+	Trace io.Writer
 }
 
 func (c Config) bin() string {
@@ -85,9 +92,14 @@ func infer(ctx context.Context, cfg Config, exec runner) ([]Suggestion, error) {
 // --tools is narrow but not empty: the survey has to read the workspace, and
 // every tool definition it will not use costs prompt tokens.
 func Args(cfg Config, repos []repo.Repo) []string {
-	return []string{
+	format := []string{"--output-format", "json"}
+	if cfg.Trace != nil {
+		// stream-json requires --verbose in print mode.
+		format = []string{"--output-format", "stream-json", "--verbose"}
+	}
+
+	args := []string{
 		"-p", prompt(cfg, repos),
-		"--output-format", "json",
 		"--json-schema", schema,
 		"--model", cfg.model(),
 		"--tools", "Grep,Glob,Read",
@@ -96,6 +108,7 @@ func Args(cfg Config, repos []repo.Repo) []string {
 		"--permission-prompts", "none",
 		"--setting-sources", "",
 	}
+	return append(args, format...)
 }
 
 // Env is the environment for the survey. Without CLAUDE_CODE_DISABLE_CLAUDE_MDS
@@ -141,15 +154,66 @@ type envelope struct {
 	IsError bool   `json:"is_error"`
 }
 
+// event is the subset of a stream-json line we render.
+type event struct {
+	Type    string `json:"type"`
+	Subtype string `json:"subtype"`
+	Message struct {
+		Content []struct {
+			Type  string          `json:"type"`
+			Text  string          `json:"text"`
+			Name  string          `json:"name"`
+			Input json.RawMessage `json:"input"`
+		} `json:"content"`
+	} `json:"message"`
+}
+
+// render writes a readable line per interesting event. Raw stream-json is
+// unreadable, so tool calls and assistant text survive and the rest does not.
+func render(w io.Writer, line []byte) {
+	var e event
+	if err := json.Unmarshal(line, &e); err != nil {
+		return
+	}
+
+	switch e.Type {
+	case "system":
+		if e.Subtype == "api_retry" {
+			fmt.Fprintln(w, "  ... retrying")
+		}
+
+	case "assistant":
+		for _, c := range e.Message.Content {
+			switch c.Type {
+			case "tool_use":
+				fmt.Fprintf(w, "  %s %s\n", c.Name, compact(c.Input))
+			case "text":
+				if t := strings.TrimSpace(c.Text); t != "" {
+					fmt.Fprintf(w, "  %s\n", t)
+				}
+			}
+		}
+	}
+}
+
+// compact renders tool input on one line, truncated.
+func compact(raw json.RawMessage) string {
+	s := strings.Join(strings.Fields(string(raw)), " ")
+	if len(s) > 160 {
+		s = s[:160] + "..."
+	}
+	return s
+}
+
 // parse reads the envelope.
 //
 // The gate is structured_output, never is_error: when the model declines to
 // fill the schema the CLI still reports subtype success and is_error false,
 // and simply omits the key.
 func parse(out []byte) ([]Suggestion, error) {
-	var env envelope
-	if err := json.Unmarshal(out, &env); err != nil {
-		return nil, fmt.Errorf("parse survey output: %w", err)
+	env, err := envelopeFrom(out)
+	if err != nil {
+		return nil, err
 	}
 
 	if env.StructuredOutput != nil {
@@ -168,6 +232,39 @@ func parse(out []byte) ([]Suggestion, error) {
 		return nil, fmt.Errorf("survey failed: %s", env.Result)
 	}
 	return nil, fmt.Errorf("%w: %s", ErrDeclined, strings.TrimSpace(env.Result))
+}
+
+// envelopeFrom reads either a single JSON object or the final result line of
+// an NDJSON stream. The stream's result line is identical to what
+// --output-format json returns, so only the framing differs.
+func envelopeFrom(out []byte) (envelope, error) {
+	var env envelope
+
+	if err := json.Unmarshal(out, &env); err == nil {
+		return env, nil
+	}
+
+	var found bool
+	for line := range strings.SplitSeq(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var probe struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal([]byte(line), &probe) != nil || probe.Type != "result" {
+			continue
+		}
+		if json.Unmarshal([]byte(line), &env) == nil {
+			found = true
+		}
+	}
+
+	if !found {
+		return envelope{}, errors.New("parse survey output: no result found")
+	}
+	return env, nil
 }
 
 // parseFenced recovers JSON the model wrapped in a code fence.
@@ -199,12 +296,47 @@ func run(ctx context.Context, cfg Config, args []string) ([]byte, error) {
 	cmd.Stdin = strings.NewReader("")
 	cmd.Stderr = os.Stderr
 
-	out, err := cmd.Output()
+	if cfg.Trace == nil {
+		out, err := cmd.Output()
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return nil, fmt.Errorf("run survey: %w", err)
+		}
+		return out, nil
+	}
+
+	return stream(ctx, cmd, cfg.Trace)
+}
+
+// stream renders each event as it arrives and returns the whole stream for
+// parsing, so tracing changes what is shown and not what is read.
+func stream(ctx context.Context, cmd *exec.Cmd, trace io.Writer) ([]byte, error) {
+	pipe, err := cmd.StdoutPipe()
 	if err != nil {
+		return nil, fmt.Errorf("survey stdout: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start survey: %w", err)
+	}
+
+	var collected []byte
+
+	sc := bufio.NewScanner(pipe)
+	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	for sc.Scan() {
+		line := sc.Bytes()
+		collected = append(collected, line...)
+		collected = append(collected, '\n')
+		render(trace, line)
+	}
+
+	if err := cmd.Wait(); err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		return nil, fmt.Errorf("run survey: %w", err)
 	}
-	return out, nil
+	return collected, nil
 }

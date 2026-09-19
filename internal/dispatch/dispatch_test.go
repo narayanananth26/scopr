@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -210,5 +211,108 @@ func TestContextCancellationPropagates(t *testing.T) {
 	_, err := infer(ctx, Config{Root: fixture(t), Task: "x"}, slow)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("infer error = %v, want context.Canceled", err)
+	}
+}
+
+func TestArgsWithoutTraceUseJSON(t *testing.T) {
+	root := fixture(t)
+	repos, _ := repo.List(root)
+
+	got := Args(Config{Root: root, Task: "x"}, repos)
+
+	i := slices.Index(got, "--output-format")
+	if i == -1 || got[i+1] != "json" {
+		t.Errorf("want --output-format json, got %v", got)
+	}
+	if slices.Contains(got, "--verbose") {
+		t.Errorf("--verbose passed without tracing: %v", got)
+	}
+}
+
+// stream-json requires --verbose in print mode; without it the CLI refuses.
+func TestArgsWithTraceStream(t *testing.T) {
+	root := fixture(t)
+	repos, _ := repo.List(root)
+
+	got := Args(Config{Root: root, Task: "x", Trace: io.Discard}, repos)
+
+	i := slices.Index(got, "--output-format")
+	if i == -1 || got[i+1] != "stream-json" {
+		t.Errorf("want --output-format stream-json, got %v", got)
+	}
+	if !slices.Contains(got, "--verbose") {
+		t.Errorf("stream-json without --verbose will be refused: %v", got)
+	}
+}
+
+// The result line of a stream is identical to the single-object envelope, so
+// only the framing differs.
+func TestParsesResultFromStream(t *testing.T) {
+	stream := strings.Join([]string{
+		`{"type":"system","subtype":"init"}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Grep","input":{"pattern":"checkout"}}]}}`,
+		`{"type":"result","subtype":"success","is_error":false,"structured_output":{"repos":[{"name":"services/api","reason":"owns it"}]}}`,
+	}, "\n")
+
+	got, err := inferWith(t, stream, nil)
+	if err != nil {
+		t.Fatalf("infer: %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "services/api" {
+		t.Errorf("got %v, want one suggestion for services/api", got)
+	}
+}
+
+func TestStreamWithoutResultErrors(t *testing.T) {
+	stream := `{"type":"system","subtype":"init"}` + "\n" + `{"type":"assistant","message":{"content":[]}}`
+
+	if _, err := inferWith(t, stream, nil); err == nil {
+		t.Fatal("a stream with no result returned no error")
+	}
+}
+
+func TestRenderShowsToolCallsAndText(t *testing.T) {
+	var b strings.Builder
+
+	render(&b, []byte(`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Grep","input":{"pattern":"checkout","path":"services"}}]}}`))
+	render(&b, []byte(`{"type":"assistant","message":{"content":[{"type":"text","text":"  found it in the api  "}]}}`))
+	render(&b, []byte(`{"type":"system","subtype":"api_retry"}`))
+
+	got := b.String()
+	for _, want := range []string{"Grep", "checkout", "found it in the api", "retrying"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("render dropped %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestRenderIgnoresNoise(t *testing.T) {
+	var b strings.Builder
+
+	render(&b, []byte(`{"type":"system","subtype":"status"}`))
+	render(&b, []byte(`{"type":"user","message":{"content":[]}}`))
+	render(&b, []byte(`not json`))
+
+	if b.Len() != 0 {
+		t.Errorf("render emitted noise:\n%s", b.String())
+	}
+}
+
+// Tracing changes what is shown, not what is read.
+func TestTraceDoesNotChangeResult(t *testing.T) {
+	stream := strings.Join([]string{
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"looking"}]}}`,
+		`{"type":"result","subtype":"success","is_error":false,"structured_output":{"repos":[{"name":"apps/web","reason":"x"}]}}`,
+	}, "\n")
+
+	var b strings.Builder
+	got, err := infer(context.Background(),
+		Config{Root: fixture(t), Task: "x", Trace: &b},
+		replies(stream, nil))
+	if err != nil {
+		t.Fatalf("infer: %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "apps/web" {
+		t.Errorf("got %v, want one suggestion for apps/web", got)
 	}
 }
