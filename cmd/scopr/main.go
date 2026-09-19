@@ -7,14 +7,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"scopr/internal/dispatch"
 	"scopr/internal/launch"
 	"scopr/internal/picker"
-	"scopr/internal/repo"
 	"scopr/internal/scope"
 	"scopr/internal/scopefile"
 	"scopr/internal/workspace"
@@ -143,57 +141,8 @@ func runRename(args []string) int {
 	return 0
 }
 
-// choose runs the picker, falling back to a printed listing when fzf is
-// missing so a bare scopr still says what could have been picked.
-func choose(root string) ([]string, int) {
-	args, err := picker.Pick(root)
-
-	switch {
-	case err == nil:
-		return args, 0
-
-	case errors.Is(err, picker.ErrCancelled):
-		return nil, 0
-
-	case errors.Is(err, picker.ErrUnavailable):
-		fmt.Fprintln(os.Stderr, "fzf is not installed, so there is nothing to pick with.")
-		fmt.Fprintln(os.Stderr, "Name a repository or scope, or install fzf. Available:")
-		fmt.Fprintln(os.Stderr)
-		printChoices(root)
-		return nil, 1
-
-	default:
-		fmt.Fprintln(os.Stderr, err)
-		return nil, 1
-	}
-}
-
-func printChoices(root string) {
-	if names, err := scopefile.List(root); err == nil {
-		for _, name := range names {
-			repos, err := scopefile.Load(root, name)
-			if err != nil {
-				continue
-			}
-			fmt.Fprintf(os.Stderr, "  %s%-16s %s\n", scope.Prefix, name, strings.Join(repos, " "))
-		}
-	}
-
-	repos, err := repo.List(root)
-	if err != nil {
-		return
-	}
-	for _, r := range repos {
-		rel, err := filepath.Rel(root, r.Path)
-		if err != nil {
-			continue
-		}
-		fmt.Fprintf(os.Stderr, "  %s\n", rel)
-	}
-}
-
-// surveyTimeout is generous: the survey is a 15-30 second call with an
-// observed 21-second tail.
+// surveyTimeout is generous: the survey runs 15-30 seconds with an observed
+// 21-second tail.
 const surveyTimeout = 90 * time.Second
 
 // confirm asks whether to use the suggested scope. Inference suggests; the
@@ -214,6 +163,23 @@ func confirm() (approved, edit bool) {
 		return false, true
 	default:
 		return false, false
+	}
+}
+
+// choose opens the editor with nothing chosen.
+func choose(root string) ([]string, int) {
+	args, err := picker.Pick(root)
+
+	switch {
+	case err == nil:
+		return args, 0
+
+	case errors.Is(err, picker.ErrCancelled):
+		return nil, 0
+
+	default:
+		fmt.Fprintln(os.Stderr, err)
+		return nil, 1
 	}
 }
 
@@ -253,9 +219,7 @@ func runInfer(task, prompt string, verbose bool) int {
 		case approved:
 
 		case edit:
-			// Trim can only remove. Adding a missed repo, or changing which
-			// is primary, means declining and naming them.
-			kept, err := picker.Trim(args)
+			kept, err := picker.Edit(root, args)
 			if errors.Is(err, picker.ErrCancelled) {
 				return 0
 			}
