@@ -5,11 +5,15 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"scopr/internal/launch"
 	"scopr/internal/scope"
+	"scopr/internal/scopefile"
 	"scopr/internal/workspace"
 )
+
+const scopePrefix = "@"
 
 // findRoot locates the workspace, reporting a missing one as advice rather
 // than as a stat error.
@@ -29,6 +33,34 @@ func findRoot() (string, error) {
 	return root, nil
 }
 
+// expand replaces every @name argument with the repositories that scope names,
+// in place, leaving plain repository names alone.
+func expand(root string, args []string) ([]string, error) {
+	var (
+		names    []string
+		problems []error
+	)
+
+	for _, arg := range args {
+		if !strings.HasPrefix(arg, scopePrefix) {
+			names = append(names, arg)
+			continue
+		}
+
+		repos, err := scopefile.Load(root, strings.TrimPrefix(arg, scopePrefix))
+		if err != nil {
+			problems = append(problems, err)
+			continue
+		}
+		names = append(names, repos...)
+	}
+
+	if len(problems) > 0 {
+		return nil, errors.Join(problems...)
+	}
+	return names, nil
+}
+
 // runWhere prints the workspace root. The path goes to stdout alone.
 func runWhere() int {
 	root, err := findRoot()
@@ -41,10 +73,97 @@ func runWhere() int {
 	return 0
 }
 
+func runList() int {
+	root, err := findRoot()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	names, err := scopefile.List(root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if len(names) == 0 {
+		fmt.Fprintln(os.Stderr, "no saved scopes; create one with --save")
+		return 0
+	}
+
+	for _, name := range names {
+		repos, err := scopefile.Load(root, name)
+		if err != nil {
+			fmt.Fprintf(os.Stdout, "%s%s\n", scopePrefix, name)
+			continue
+		}
+		fmt.Fprintf(os.Stdout, "%s%-16s %s\n", scopePrefix, name, strings.Join(repos, " "))
+	}
+	return 0
+}
+
+// runSave stores a scope after checking every repository resolves, so a saved
+// scope is one that can actually launch.
+func runSave(name string, args []string) int {
+	root, err := findRoot()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	names, err := expand(root, args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	if _, err := scope.Resolve(root, names); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	if err := scopefile.Save(root, name, names); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	fmt.Fprintf(os.Stderr, "saved %s%s: %s\n", scopePrefix, name, strings.Join(names, " "))
+	return 0
+}
+
+func runRename(args []string) int {
+	if len(args) != 2 {
+		fmt.Fprintln(os.Stderr, "usage: scopr --rename <old> <new>")
+		return 1
+	}
+
+	root, err := findRoot()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	from := strings.TrimPrefix(args[0], scopePrefix)
+	to := strings.TrimPrefix(args[1], scopePrefix)
+
+	if err := scopefile.Rename(root, from, to); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	fmt.Fprintf(os.Stderr, "renamed %s%s to %s%s\n", scopePrefix, from, scopePrefix, to)
+	return 0
+}
+
 // runLaunch resolves names to a scope and starts a session in the primary
 // repo, returning claude's exit code.
-func runLaunch(names []string, prompt string) int {
+func runLaunch(args []string, prompt string) int {
 	root, err := findRoot()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	names, err := expand(root, args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -68,14 +187,17 @@ func usage() {
 	fmt.Fprint(os.Stderr, `scopr launches Claude Code scoped to chosen repositories.
 
 usage:
-  scopr [flags] <repo>...     start a session scoped to these repos; the first becomes the working directory
-  scopr --where               print the workspace root
+  scopr [flags] <repo|@scope>...   start a session; the first repo becomes the working directory
+  scopr --save <name> <repo>...    save a scope under that name
+  scopr --rename <old> <new>       rename a saved scope
+  scopr --list                     list saved scopes
+  scopr --where                    print the workspace root
 
 flags:
-  -p <text>                   prompt to submit on start
-  --where                     print the workspace root and exit
+  -p <text>                        prompt to submit on start
 
-Flags must precede repository names.
+An @name argument expands to the repositories that scope names, so scopes and
+plain repositories can be mixed. Flags must precede everything else.
 `)
 }
 
@@ -83,18 +205,31 @@ func main() {
 	flag.Usage = usage
 
 	where := flag.Bool("where", false, "print the workspace root and exit")
+	list := flag.Bool("list", false, "list saved scopes")
+	rename := flag.Bool("rename", false, "rename a saved scope")
+	save := flag.String("save", "", "save the given repositories under this scope name")
 	prompt := flag.String("p", "", "prompt to submit on start")
 	flag.Parse()
 
-	if *where {
-		os.Exit(runWhere())
-	}
+	args := flag.Args()
 
-	names := flag.Args()
-	if len(names) == 0 {
+	switch {
+	case *where:
+		os.Exit(runWhere())
+	case *list:
+		os.Exit(runList())
+	case *rename:
+		os.Exit(runRename(args))
+	case *save != "":
+		if len(args) == 0 {
+			fmt.Fprintln(os.Stderr, "usage: scopr --save <name> <repo>...")
+			os.Exit(1)
+		}
+		os.Exit(runSave(strings.TrimPrefix(*save, scopePrefix), args))
+	case len(args) == 0:
 		usage()
 		os.Exit(1)
+	default:
+		os.Exit(runLaunch(args, *prompt))
 	}
-
-	os.Exit(runLaunch(names, *prompt))
 }
