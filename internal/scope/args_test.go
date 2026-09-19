@@ -150,3 +150,47 @@ func TestEmptyArgsErrors(t *testing.T) {
 		t.Fatalf("ResolveArgs error = %v, want ErrEmpty", err)
 	}
 }
+
+// Two scopes claiming one repo must name both scopes; "x and x are both /p"
+// reads as a bug rather than a collision.
+func TestOverlapNamesBothScopes(t *testing.T) {
+	root := fixture(t)
+	saved(t, root, "one", "api", "shared")
+	saved(t, root, "two", "shared")
+
+	_, err := scope.ResolveArgs(root, []string{"@one", "@two"})
+	if err == nil {
+		t.Fatal("ResolveArgs returned no error")
+	}
+	for _, want := range []string{"@one", "@two", "shared"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+}
+
+func TestOverlapWithDirectNameNamesTheScope(t *testing.T) {
+	root := fixture(t)
+	saved(t, root, "one", "api")
+
+	_, err := scope.ResolveArgs(root, []string{"@one", "api"})
+	if err == nil {
+		t.Fatal("ResolveArgs returned no error")
+	}
+	if !strings.Contains(err.Error(), "@one") {
+		t.Errorf("error %q does not name the scope holding it", err)
+	}
+}
+
+func TestScopeNamingSameRepoTwice(t *testing.T) {
+	root := fixture(t)
+	saved(t, root, "dup", "api", "api")
+
+	_, err := scope.ResolveArgs(root, []string{"@dup"})
+	if err == nil {
+		t.Fatal("ResolveArgs returned no error")
+	}
+	if !strings.Contains(err.Error(), "@dup") || !strings.Contains(err.Error(), "twice") {
+		t.Errorf("error %q should say @dup names it twice", err)
+	}
+}

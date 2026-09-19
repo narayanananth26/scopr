@@ -67,7 +67,7 @@ func resolveNamed(root string, names []named) (Scope, error) {
 	var (
 		resolved []repo.Repo
 		problems []error
-		seen     = make(map[string]string, len(names))
+		seen     = make(map[string]named, len(names))
 	)
 
 	for _, n := range names {
@@ -78,10 +78,10 @@ func resolveNamed(root string, names []named) (Scope, error) {
 		}
 
 		if first, dup := seen[path]; dup {
-			problems = append(problems, n.attribute(fmt.Errorf("%w: %q and %q are both %s", ErrDuplicate, first, n.name, path)))
+			problems = append(problems, duplicateError(first, n, path))
 			continue
 		}
-		seen[path] = n.name
+		seen[path] = n
 
 		resolved = append(resolved, byPath[path])
 	}
@@ -91,4 +91,29 @@ func resolveNamed(root string, names []named) (Scope, error) {
 	}
 
 	return Scope{Root: root, Repos: resolved}, nil
+}
+
+// duplicateError says who claimed the repository, naming scopes when the
+// collision came from them. Two scopes colliding on a name reads as a bug
+// unless the message says which scopes.
+func duplicateError(first, second named, path string) error {
+	switch {
+	case first.from != "" && second.from != "" && first.from == second.from:
+		return fmt.Errorf("%w: %s%s names %q twice", ErrDuplicate, Prefix, first.from, second.name)
+
+	case first.from != "" && second.from != "":
+		return fmt.Errorf("%w: %s%s and %s%s both name %q", ErrDuplicate, Prefix, first.from, Prefix, second.from, second.name)
+
+	case first.from != "":
+		return fmt.Errorf("%w: %q is already in %s%s", ErrDuplicate, second.name, Prefix, first.from)
+
+	case second.from != "":
+		return fmt.Errorf("%w: %s%s names %q, which was already given", ErrDuplicate, Prefix, second.from, second.name)
+
+	case first.name == second.name:
+		return fmt.Errorf("%w: %q", ErrDuplicate, second.name)
+
+	default:
+		return fmt.Errorf("%w: %q and %q are both %s", ErrDuplicate, first.name, second.name, path)
+	}
 }
