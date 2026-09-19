@@ -48,10 +48,21 @@ func (m Model) View() string {
 func (m Model) viewScope() string {
 	var b strings.Builder
 
-	b.WriteString("scope\n\n")
+	b.WriteString("scope\n")
+	if m.Header != "" {
+		b.WriteString(dim.Render("  "+m.Header) + "\n")
+	}
+	b.WriteString("\n")
 
 	if len(m.Chosen) == 0 {
-		b.WriteString(dim.Render("  (empty - press a to add)") + "\n")
+		b.WriteString(dim.Render("  nothing chosen - press a to add") + "\n")
+	}
+
+	width := 0
+	for _, name := range m.Chosen {
+		if len(name) > width {
+			width = len(name)
+		}
 	}
 
 	for i, name := range m.Chosen {
@@ -60,11 +71,22 @@ func (m Model) viewScope() string {
 			cursor = marker.Render("> ")
 		}
 
-		line := name
+		shown := name
 		if i == 0 {
-			line = primary.Render(name) + dim.Render("  working directory")
+			shown = primary.Render(name)
 		}
-		fmt.Fprintf(&b, "%s%s\n", cursor, line)
+
+		b.WriteString(cursor + shown + strings.Repeat(" ", width-len(name)))
+
+		switch note := m.Notes[name]; {
+		case i == 0 && note != "":
+			b.WriteString(dim.Render("  working directory - " + note))
+		case i == 0:
+			b.WriteString(dim.Render("  working directory"))
+		case note != "":
+			b.WriteString(dim.Render("  " + note))
+		}
+		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
@@ -104,8 +126,8 @@ func (m Model) viewAdd() string {
 }
 
 // Run shows the editor and returns the accepted scope.
-func Run(chosen, available []string) ([]string, error) {
-	out, err := tea.NewProgram(New(chosen, available), tea.WithOutput(os.Stderr)).Run()
+func Run(m Model) ([]string, error) {
+	out, err := tea.NewProgram(m, tea.WithOutput(os.Stderr)).Run()
 	if err != nil {
 		return nil, fmt.Errorf("run editor: %w", err)
 	}

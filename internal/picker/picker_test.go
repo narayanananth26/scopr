@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"scopr/internal/scopefile"
+	"scopr/internal/ui"
 )
 
 func fixture(t *testing.T) string {
@@ -31,11 +32,13 @@ type spy struct {
 	available []string
 	answer    []string
 	err       error
+	model     ui.Model
 	calls     int
 }
 
-func (s *spy) edit(chosen, available []string) ([]string, error) {
-	s.chosen, s.available = chosen, available
+func (s *spy) edit(m ui.Model) ([]string, error) {
+	s.chosen, s.available = m.Chosen, m.Available
+	s.model = m
 	s.calls++
 	return s.answer, s.err
 }
@@ -44,7 +47,7 @@ func TestOffersEveryRepo(t *testing.T) {
 	root := fixture(t)
 	s := &spy{answer: []string{"services/api"}}
 
-	if _, err := pick(root, nil, s.edit); err != nil {
+	if _, err := pick(root, Scope{}, s.edit); err != nil {
 		t.Fatalf("pick: %v", err)
 	}
 	for _, want := range []string{"apps/web", "apps/shared", "services/api"} {
@@ -58,7 +61,7 @@ func TestOpensEmptyWhenNothingChosen(t *testing.T) {
 	root := fixture(t)
 	s := &spy{answer: []string{"services/api"}}
 
-	if _, err := pick(root, nil, s.edit); err != nil {
+	if _, err := pick(root, Scope{}, s.edit); err != nil {
 		t.Fatalf("pick: %v", err)
 	}
 	if len(s.chosen) != 0 {
@@ -71,7 +74,7 @@ func TestOpensOnGivenScope(t *testing.T) {
 	s := &spy{answer: []string{"services/api"}}
 
 	in := []string{"services/api", "apps/web"}
-	if _, err := pick(root, in, s.edit); err != nil {
+	if _, err := pick(root, Scope{Names: in}, s.edit); err != nil {
 		t.Fatalf("pick: %v", err)
 	}
 	if !slices.Equal(s.chosen, in) {
@@ -87,7 +90,7 @@ func TestExpandsScopeBeforeEditing(t *testing.T) {
 	}
 	s := &spy{answer: []string{"services/api"}}
 
-	if _, err := pick(root, []string{"@seam"}, s.edit); err != nil {
+	if _, err := pick(root, Scope{Names: []string{"@seam"}}, s.edit); err != nil {
 		t.Fatalf("pick: %v", err)
 	}
 	if want := []string{"services/api", "apps/web"}; !slices.Equal(s.chosen, want) {
@@ -99,7 +102,7 @@ func TestUnknownScopeErrors(t *testing.T) {
 	root := fixture(t)
 	s := &spy{}
 
-	if _, err := pick(root, []string{"@nope"}, s.edit); !errors.Is(err, scopefile.ErrNoSuchScope) {
+	if _, err := pick(root, Scope{Names: []string{"@nope"}}, s.edit); !errors.Is(err, scopefile.ErrNoSuchScope) {
 		t.Fatalf("pick error = %v, want ErrNoSuchScope", err)
 	}
 	if s.calls != 0 {
@@ -112,7 +115,7 @@ func TestPassesResultThrough(t *testing.T) {
 	want := []string{"apps/web", "services/api"}
 	s := &spy{answer: want}
 
-	got, err := pick(root, nil, s.edit)
+	got, err := pick(root, Scope{}, s.edit)
 	if err != nil {
 		t.Fatalf("pick: %v", err)
 	}
@@ -125,7 +128,7 @@ func TestCancellationPropagates(t *testing.T) {
 	root := fixture(t)
 	s := &spy{err: ErrCancelled}
 
-	if _, err := pick(root, nil, s.edit); !errors.Is(err, ErrCancelled) {
+	if _, err := pick(root, Scope{}, s.edit); !errors.Is(err, ErrCancelled) {
 		t.Fatalf("pick error = %v, want ErrCancelled", err)
 	}
 }
@@ -137,10 +140,32 @@ func TestEmptyWorkspaceErrors(t *testing.T) {
 	}
 	s := &spy{}
 
-	if _, err := pick(root, nil, s.edit); err == nil {
+	if _, err := pick(root, Scope{}, s.edit); err == nil {
 		t.Fatal("pick on an empty workspace returned no error")
 	}
 	if s.calls != 0 {
 		t.Error("editor opened with nothing to offer")
+	}
+}
+
+// Notes and header reach the editor, so a suggestion shows why it was made.
+func TestCarriesNotesAndHeader(t *testing.T) {
+	root := fixture(t)
+	s := &spy{answer: []string{"services/api"}}
+
+	in := Scope{
+		Names:  []string{"services/api"},
+		Notes:  map[string]string{"services/api": "owns the checkout endpoint"},
+		Header: "suggested for: trace the checkout call",
+	}
+	if _, err := pick(root, in, s.edit); err != nil {
+		t.Fatalf("pick: %v", err)
+	}
+
+	if got := s.model.Notes["services/api"]; got != "owns the checkout endpoint" {
+		t.Errorf("note = %q, want the reason", got)
+	}
+	if s.model.Header != in.Header {
+		t.Errorf("header = %q, want %q", s.model.Header, in.Header)
 	}
 }

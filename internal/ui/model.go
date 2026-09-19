@@ -25,6 +25,13 @@ type Model struct {
 	// Available is every name in the workspace, including those chosen.
 	Available []string
 
+	// Notes describes entries that came from somewhere, keyed by name. A
+	// repository added by hand has none.
+	Notes map[string]string
+
+	// Header is shown above the list, for saying where the scope came from.
+	Header string
+
 	mode   mode
 	cursor int
 

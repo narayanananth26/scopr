@@ -17,20 +17,32 @@ var ErrCancelled = ui.ErrCancelled
 
 // Editor shows a scope and returns the accepted one. Injected so the logic
 // around it is testable without a terminal.
-type Editor func(chosen, available []string) ([]string, error)
+type Editor func(ui.Model) ([]string, error)
 
 // Pick opens the editor with nothing chosen.
 func Pick(root string) ([]string, error) {
-	return pick(root, nil, ui.Run)
+	return pick(root, Scope{}, ui.Run)
+}
+
+// Scope is what the editor opens on.
+type Scope struct {
+	// Names are already chosen, in order.
+	Names []string
+
+	// Notes describes where a name came from, keyed by name.
+	Notes map[string]string
+
+	// Header says where the scope came from, shown above the list.
+	Header string
 }
 
 // Edit opens the editor on an existing scope, for trimming, reordering or
-// adding to a set of suggestions.
-func Edit(root string, chosen []string) ([]string, error) {
-	return pick(root, chosen, ui.Run)
+// adding to it.
+func Edit(root string, s Scope) ([]string, error) {
+	return pick(root, s, ui.Run)
 }
 
-func pick(root string, chosen []string, edit Editor) ([]string, error) {
+func pick(root string, s Scope, edit Editor) ([]string, error) {
 	available, err := names(root)
 	if err != nil {
 		return nil, err
@@ -41,12 +53,16 @@ func pick(root string, chosen []string, edit Editor) ([]string, error) {
 
 	// A scope name is not a repository, so it is expanded before editing
 	// rather than offered as an entry.
-	expanded, err := expand(root, chosen)
+	expanded, err := expand(root, s.Names)
 	if err != nil {
 		return nil, err
 	}
 
-	return edit(expanded, available)
+	m := ui.New(expanded, available)
+	m.Notes = s.Notes
+	m.Header = s.Header
+
+	return edit(m)
 }
 
 // names is every repository in the workspace, as it must be typed back.

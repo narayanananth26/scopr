@@ -210,3 +210,56 @@ func TestViewShowsCandidatesInAddMode(t *testing.T) {
 		t.Errorf("add view still showing the scope list:\n%s", got)
 	}
 }
+
+// A suggestion's reason belongs beside its repo, not printed above the list.
+func TestViewShowsNotes(t *testing.T) {
+	m := editor()
+	m.Notes = map[string]string{
+		"services/api": "owns the checkout endpoint",
+		"apps/web":     "calls it from the cart",
+	}
+
+	got := m.View()
+	for _, want := range []string{"owns the checkout endpoint", "calls it from the cart"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("view dropped %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestViewAlignsNotes(t *testing.T) {
+	m := New([]string{"a", "much-longer-name"}, nil)
+	m.Notes = map[string]string{"a": "short", "much-longer-name": "long"}
+
+	lines := strings.Split(m.View(), "\n")
+	var cols []int
+	for _, line := range lines {
+		if i := strings.Index(line, "short"); i > 0 {
+			cols = append(cols, i)
+		}
+		if i := strings.Index(line, "long"); i > 0 && !strings.Contains(line, "longer") {
+			cols = append(cols, i)
+		}
+	}
+	if len(cols) == 2 && cols[0] != cols[1] {
+		t.Errorf("notes start at columns %v, want them aligned", cols)
+	}
+}
+
+func TestViewShowsHeader(t *testing.T) {
+	m := editor()
+	m.Header = "suggested for: trace the checkout call"
+
+	if !strings.Contains(m.View(), "trace the checkout call") {
+		t.Errorf("view dropped the header:\n%s", m.View())
+	}
+}
+
+// A repo added by hand has no note, and must still render.
+func TestViewWithoutNotes(t *testing.T) {
+	got := editor().View()
+
+	if !strings.Contains(got, "services/api") || !strings.Contains(got, "working directory") {
+		t.Errorf("view broke without notes:\n%s", got)
+	}
+}

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -147,27 +146,6 @@ func runRename(args []string) int {
 // 21-second tail.
 const surveyTimeout = 90 * time.Second
 
-// confirm asks whether to use the suggested scope. Inference suggests; the
-// person decides, because a wrongly narrow scope fails by the agent not
-// finding code rather than by saying so.
-func confirm() (approved, edit bool) {
-	fmt.Fprint(os.Stderr, "\nstart here? [Y]es / [e]dit / [n]o: ")
-
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil && line == "" {
-		return false, false
-	}
-
-	switch strings.ToLower(strings.TrimSpace(line)) {
-	case "", "y", "yes":
-		return true, false
-	case "e", "edit":
-		return false, true
-	default:
-		return false, false
-	}
-}
-
 // choose opens the editor with nothing chosen.
 func choose(root string) ([]string, int) {
 	args, err := picker.Pick(root)
@@ -211,44 +189,33 @@ func runInfer(task, prompt string, verbose bool) int {
 		return err
 	})
 
-	if errors.Is(err, ui.ErrCancelled) {
-		return 0
-	}
-
-	var args []string
+	scoped := picker.Scope{Header: "suggested for: " + task}
 
 	switch {
+	case errors.Is(err, ui.ErrCancelled):
+		return 0
+
 	case err == nil:
-		fmt.Fprintln(os.Stderr)
+		scoped.Notes = make(map[string]string, len(suggestions))
 		for _, s := range suggestions {
-			fmt.Fprintf(os.Stderr, "  %-28s %s\n", s.Name, s.Reason)
-			args = append(args, s.Name)
-		}
-
-		approved, edit := confirm()
-		switch {
-		case approved:
-
-		case edit:
-			kept, err := picker.Edit(root, args)
-			if errors.Is(err, picker.ErrCancelled) {
-				return 0
-			}
-			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				return 1
-			}
-			args = kept
-
-		default:
-			return 0
+			scoped.Names = append(scoped.Names, s.Name)
+			scoped.Notes[s.Name] = s.Reason
 		}
 
 	case errors.Is(err, dispatch.ErrDeclined):
-		// Nothing found is not a failure; fall through to picking by hand.
-		fmt.Fprintf(os.Stderr, "%v\n\npick instead:\n", err)
+		// Nothing found is not a failure; open the editor empty.
+		scoped.Header = "nothing suggested - " + err.Error()
 
 	default:
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	args, err := picker.Edit(root, scoped)
+	if errors.Is(err, picker.ErrCancelled) {
+		return 0
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
