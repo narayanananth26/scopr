@@ -13,8 +13,6 @@ import (
 	"scopr/internal/workspace"
 )
 
-const scopePrefix = "@"
-
 // findRoot locates the workspace, reporting a missing one as advice rather
 // than as a stat error.
 func findRoot() (string, error) {
@@ -31,34 +29,6 @@ func findRoot() (string, error) {
 		return "", err
 	}
 	return root, nil
-}
-
-// expand replaces every @name argument with the repositories that scope names,
-// in place, leaving plain repository names alone.
-func expand(root string, args []string) ([]string, error) {
-	var (
-		names    []string
-		problems []error
-	)
-
-	for _, arg := range args {
-		if !strings.HasPrefix(arg, scopePrefix) {
-			names = append(names, arg)
-			continue
-		}
-
-		repos, err := scopefile.Load(root, strings.TrimPrefix(arg, scopePrefix))
-		if err != nil {
-			problems = append(problems, err)
-			continue
-		}
-		names = append(names, repos...)
-	}
-
-	if len(problems) > 0 {
-		return nil, errors.Join(problems...)
-	}
-	return names, nil
 }
 
 // runWhere prints the workspace root. The path goes to stdout alone.
@@ -93,10 +63,10 @@ func runList() int {
 	for _, name := range names {
 		repos, err := scopefile.Load(root, name)
 		if err != nil {
-			fmt.Fprintf(os.Stdout, "%s%s\n", scopePrefix, name)
+			fmt.Fprintf(os.Stdout, "%s%s\n", scope.Prefix, name)
 			continue
 		}
-		fmt.Fprintf(os.Stdout, "%s%-16s %s\n", scopePrefix, name, strings.Join(repos, " "))
+		fmt.Fprintf(os.Stdout, "%s%-16s %s\n", scope.Prefix, name, strings.Join(repos, " "))
 	}
 	return 0
 }
@@ -110,23 +80,17 @@ func runSave(name string, args []string) int {
 		return 1
 	}
 
-	names, err := expand(root, args)
-	if err != nil {
+	if _, err := scope.ResolveArgs(root, args); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 
-	if _, err := scope.Resolve(root, names); err != nil {
+	if err := scopefile.Save(root, name, args); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 
-	if err := scopefile.Save(root, name, names); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-
-	fmt.Fprintf(os.Stderr, "saved %s%s: %s\n", scopePrefix, name, strings.Join(names, " "))
+	fmt.Fprintf(os.Stderr, "saved %s%s: %s\n", scope.Prefix, name, strings.Join(args, " "))
 	return 0
 }
 
@@ -142,15 +106,15 @@ func runRename(args []string) int {
 		return 1
 	}
 
-	from := strings.TrimPrefix(args[0], scopePrefix)
-	to := strings.TrimPrefix(args[1], scopePrefix)
+	from := strings.TrimPrefix(args[0], scope.Prefix)
+	to := strings.TrimPrefix(args[1], scope.Prefix)
 
 	if err := scopefile.Rename(root, from, to); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 
-	fmt.Fprintf(os.Stderr, "renamed %s%s to %s%s\n", scopePrefix, from, scopePrefix, to)
+	fmt.Fprintf(os.Stderr, "renamed %s%s to %s%s\n", scope.Prefix, from, scope.Prefix, to)
 	return 0
 }
 
@@ -163,13 +127,7 @@ func runLaunch(args []string, prompt string) int {
 		return 1
 	}
 
-	names, err := expand(root, args)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-
-	s, err := scope.Resolve(root, names)
+	s, err := scope.ResolveArgs(root, args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -225,7 +183,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "usage: scopr --save <name> <repo>...")
 			os.Exit(1)
 		}
-		os.Exit(runSave(strings.TrimPrefix(*save, scopePrefix), args))
+		os.Exit(runSave(strings.TrimPrefix(*save, scope.Prefix), args))
 	case len(args) == 0:
 		usage()
 		os.Exit(1)

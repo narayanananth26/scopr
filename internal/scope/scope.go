@@ -23,10 +23,33 @@ func (s Scope) Primary() repo.Repo { return s.Repos[0] }
 
 func (s Scope) Others() []repo.Repo { return s.Repos[1:] }
 
+// named is a repository name plus the scope it was expanded from, empty when
+// it was typed directly.
+type named struct {
+	name string
+	from string
+}
+
+// attribute prefixes err with the scope a name came from.
+func (n named) attribute(err error) error {
+	if n.from == "" {
+		return err
+	}
+	return fmt.Errorf("%s%s: %w", Prefix, n.from, err)
+}
+
 // Resolve maps names to repositories under root, keeping the given order.
 // Duplicates are matched by resolved path, so two spellings of one repo
 // collide. Reports every bad name at once; returns no scope on any failure.
 func Resolve(root string, names []string) (Scope, error) {
+	ns := make([]named, len(names))
+	for i, name := range names {
+		ns[i] = named{name: name}
+	}
+	return resolveNamed(root, ns)
+}
+
+func resolveNamed(root string, names []named) (Scope, error) {
 	if len(names) == 0 {
 		return Scope{}, ErrEmpty
 	}
@@ -47,18 +70,18 @@ func Resolve(root string, names []string) (Scope, error) {
 		seen     = make(map[string]string, len(names))
 	)
 
-	for _, name := range names {
-		path, err := repo.ResolveIn(root, repos, name)
+	for _, n := range names {
+		path, err := repo.ResolveIn(root, repos, n.name)
 		if err != nil {
-			problems = append(problems, err)
+			problems = append(problems, n.attribute(err))
 			continue
 		}
 
 		if first, dup := seen[path]; dup {
-			problems = append(problems, fmt.Errorf("%w: %q and %q are both %s", ErrDuplicate, first, name, path))
+			problems = append(problems, n.attribute(fmt.Errorf("%w: %q and %q are both %s", ErrDuplicate, first, n.name, path)))
 			continue
 		}
-		seen[path] = name
+		seen[path] = n.name
 
 		resolved = append(resolved, byPath[path])
 	}
