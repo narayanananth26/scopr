@@ -9,7 +9,7 @@ import (
 
 var ErrNotFound = errors.New("no .scopr workspace found")
 
-// Searches upward from startDir until it finds .scopr dir. 
+// Searches upward from startDir until it finds .scopr dir.
 // Returns absolute path of scopr workspace root and error
 func Find(startDir string) (string, error) {
 	if startDir == "" {
