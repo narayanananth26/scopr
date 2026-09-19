@@ -1,0 +1,18 @@
+# build output
+/scopr
+/dist/
+
+# test and profiling
+*.test
+*.out
+*.prof
+
+# workspace file
+go.work
+go.work.sum
+
+# macOS
+.DS_Store
+
+# Local Claude Code settings 
+.claude/settings.local.json
