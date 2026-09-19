@@ -43,7 +43,7 @@ func Edit(root string, s Scope) ([]string, error) {
 }
 
 func pick(root string, s Scope, edit Editor) ([]string, error) {
-	available, err := names(root)
+	available, err := Names(root)
 	if err != nil {
 		return nil, err
 	}
@@ -65,8 +65,8 @@ func pick(root string, s Scope, edit Editor) ([]string, error) {
 	return edit(m)
 }
 
-// names is every repository in the workspace, as it must be typed back.
-func names(root string) ([]string, error) {
+// Names is every repository in the workspace, as it must be typed back.
+func Names(root string) ([]string, error) {
 	repos, err := repo.List(root)
 	if err != nil {
 		return nil, err
@@ -115,7 +115,7 @@ func Available(root string, w *os.File) {
 		}
 	}
 
-	if repos, err := names(root); err == nil {
+	if repos, err := Names(root); err == nil {
 		for _, name := range repos {
 			_, _ = w.WriteString("  " + name + "\n")
 		}

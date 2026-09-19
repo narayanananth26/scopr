@@ -146,6 +146,61 @@ func runRename(args []string) int {
 // 21-second tail.
 const surveyTimeout = 90 * time.Second
 
+// runInit walks name, scope and prompt, then starts the session. A new name
+// saves the scope once it is known to resolve.
+func runInit() int {
+	root, err := findRoot()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	saved, err := scopefile.List(root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	available, err := picker.Names(root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if len(available) == 0 {
+		fmt.Fprintln(os.Stderr, "no repositories in this workspace")
+		return 1
+	}
+
+	load := func(name string) ([]string, error) { return scopefile.Load(root, name) }
+
+	w, err := ui.RunWizard(ui.NewWizard(saved, available, load))
+	if errors.Is(err, ui.ErrCancelled) {
+		return 0
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	repos := w.Repos()
+
+	// Save only after the scope is known to resolve, so a saved scope is one
+	// that can launch.
+	if name := w.Name(); name != "" {
+		if _, err := scope.Resolve(root, repos); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if err := scopefile.Save(root, name, repos); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		fmt.Fprintf(os.Stderr, "saved %s%s\n", scope.Prefix, name)
+	}
+
+	return runLaunch(repos, w.Prompt())
+}
+
 // choose opens the editor with nothing chosen.
 func choose(root string) ([]string, int) {
 	args, err := picker.Pick(root)
@@ -268,6 +323,7 @@ usage:
   scopr --rename <old> <new>       rename a saved scope
   scopr --delete <name>            delete a saved scope
   scopr --list                     list saved scopes
+  scopr init                       name, scope and prompt, step by step
   scopr --where                    print the workspace root
 
 flags:
@@ -293,6 +349,10 @@ func main() {
 	flag.Parse()
 
 	args := flag.Args()
+
+	if len(args) == 1 && args[0] == "init" {
+		os.Exit(runInit())
+	}
 
 	switch {
 	case *where:
