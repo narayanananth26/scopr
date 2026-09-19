@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"scopr/internal/dispatch"
+	"scopr/internal/files"
 	"scopr/internal/launch"
 	"scopr/internal/picker"
 	"scopr/internal/scope"
@@ -173,7 +174,29 @@ func runInit() int {
 
 	load := func(name string) ([]string, error) { return scopefile.Load(root, name) }
 
-	w, err := ui.RunWizard(ui.NewWizard(saved, available, load))
+	wiz := ui.NewWizard(saved, available, load)
+	wiz.LoadFiles = func(names []string) []files.File {
+		s, err := scope.Resolve(root, names)
+		if err != nil {
+			return nil
+		}
+
+		paths := make([]string, 0, len(s.Repos))
+		for _, r := range s.Repos {
+			paths = append(paths, r.Path)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+
+		out, err := files.List(ctx, s.Primary().Path, paths)
+		if err != nil {
+			return nil
+		}
+		return out
+	}
+
+	w, err := ui.RunWizard(wiz)
 	if errors.Is(err, ui.ErrCancelled) {
 		return 0
 	}

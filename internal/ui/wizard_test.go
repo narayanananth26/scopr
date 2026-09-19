@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"scopr/internal/files"
 )
 
 func wizard() Wizard {
@@ -214,5 +216,210 @@ func TestWizardEmptyScopeCannotFinish(t *testing.T) {
 
 	if w.step == stepPrompt {
 		t.Error("an empty scope advanced to the prompt")
+	}
+}
+
+func tagging() Wizard {
+	w := type_(wizard(), "surfaces").Key("enter").Key("enter")
+	w.Files = []files.File{
+		{Rel: "src/cart.ts", Base: "cart.ts"},
+		{Rel: "src/checkout.ts", Base: "checkout.ts"},
+		{Rel: "../shared/util.ts", Base: "util.ts"},
+	}
+	return w
+}
+
+func TestTagOpensOnAt(t *testing.T) {
+	w := tagging().Key("@")
+
+	if !w.tagging {
+		t.Fatal("@ did not start a tag")
+	}
+	if !strings.Contains(w.View(), "src/checkout.ts") {
+		t.Errorf("tag list does not offer files:\n%s", w.View())
+	}
+}
+
+func TestTagFiltersAsYouType(t *testing.T) {
+	w := type_(tagging().Key("@"), "checkout")
+
+	m := w.matches()
+	if len(m) == 0 || m[0].Rel != "src/checkout.ts" {
+		t.Errorf("best match = %v, want src/checkout.ts", m)
+	}
+}
+
+// The tag lands in the prompt text, which is what claude parses.
+func TestTagInsertsPath(t *testing.T) {
+	w := type_(tagging(), "look at ")
+	w = type_(w.Key("@"), "checkout").Key("enter")
+
+	if want := "look at @src/checkout.ts "; w.prompt != want {
+		t.Errorf("prompt = %q, want %q", w.prompt, want)
+	}
+	if w.tagging {
+		t.Error("still tagging after inserting")
+	}
+}
+
+func TestTagTabInserts(t *testing.T) {
+	w := type_(tagging().Key("@"), "cart").Key("tab")
+
+	if !strings.Contains(w.prompt, "@src/cart.ts") {
+		t.Errorf("prompt = %q, want the tag inserted", w.prompt)
+	}
+}
+
+// Escaping must leave no half-typed tag behind.
+func TestTagEscapeDropsTheAt(t *testing.T) {
+	w := type_(tagging(), "look at ")
+	w = type_(w.Key("@"), "check").Key("esc")
+
+	if want := "look at "; w.prompt != want {
+		t.Errorf("prompt = %q, want %q", w.prompt, want)
+	}
+	if w.tagging {
+		t.Error("still tagging after escape")
+	}
+}
+
+// Backspacing off the @ leaves tag mode, rather than trapping you in it.
+func TestTagBackspaceOffTheAtExits(t *testing.T) {
+	w := tagging().Key("@").Key("backspace")
+
+	if w.tagging {
+		t.Error("backspace on an empty query stayed in tag mode")
+	}
+	if w.prompt != "" {
+		t.Errorf("prompt = %q, want empty", w.prompt)
+	}
+}
+
+func TestTagBackspaceNarrowsQuery(t *testing.T) {
+	w := type_(tagging().Key("@"), "checkout").Key("backspace")
+
+	if w.query != "checkou" {
+		t.Errorf("query = %q, want checkou", w.query)
+	}
+	if !strings.HasSuffix(w.prompt, "@checkou") {
+		t.Errorf("prompt = %q, want it to track the query", w.prompt)
+	}
+}
+
+// A space ends a tag nobody completed, rather than swallowing it.
+func TestTagSpaceEndsTagging(t *testing.T) {
+	w := type_(tagging().Key("@"), "zzz").Key(" ")
+
+	if w.tagging {
+		t.Error("space did not end tagging")
+	}
+	if want := "@zzz "; w.prompt != want {
+		t.Errorf("prompt = %q, want %q", w.prompt, want)
+	}
+}
+
+func TestTagWithNoMatchesInsertsNothing(t *testing.T) {
+	w := type_(tagging().Key("@"), "zzzzz").Key("enter")
+
+	if strings.Contains(w.prompt, ".ts") {
+		t.Errorf("prompt = %q, want no path inserted", w.prompt)
+	}
+	if w.tagging {
+		t.Error("still tagging after a miss")
+	}
+}
+
+// Files load in the background, so the list must say so rather than look empty.
+func TestTagSaysWhenStillLoading(t *testing.T) {
+	w := type_(wizard(), "surfaces").Key("enter").Key("enter").Key("@")
+
+	if !strings.Contains(w.View(), "still reading") {
+		t.Errorf("tag list does not report loading:\n%s", w.View())
+	}
+}
+
+func TestTagThenFinish(t *testing.T) {
+	w := type_(tagging(), "why is ")
+	w = type_(w.Key("@"), "checkout").Key("enter")
+	w = type_(w, "called twice").Key("enter")
+
+	if !w.Done() {
+		t.Fatal("wizard did not finish")
+	}
+	if want := "why is @src/checkout.ts called twice"; w.Prompt() != want {
+		t.Errorf("Prompt = %q, want %q", w.Prompt(), want)
+	}
+}
+
+func TestTagCursorMoves(t *testing.T) {
+	w := tagging().Key("@").Key("down")
+
+	m := w.matches()
+	if len(m) < 2 {
+		t.Fatalf("need at least two matches, got %v", m)
+	}
+	if w.tagCursor != 1 {
+		t.Errorf("cursor = %d, want 1", w.tagCursor)
+	}
+
+	w = w.Key("enter")
+	if !strings.Contains(w.prompt, m[1].Rel) {
+		t.Errorf("prompt = %q, want the second match %q", w.prompt, m[1].Rel)
+	}
+}
+
+func TestTagCursorStopsAtEdges(t *testing.T) {
+	w := tagging().Key("@").Key("up").Key("up")
+	if w.tagCursor != 0 {
+		t.Errorf("cursor = %d, want 0 at the top", w.tagCursor)
+	}
+
+	w = tagging().Key("@")
+	for range 20 {
+		w = w.Key("down")
+	}
+	if w.tagCursor >= len(w.matches()) {
+		t.Errorf("cursor = %d, past %d matches", w.tagCursor, len(w.matches()))
+	}
+}
+
+func TestTagCtrlNAndPMove(t *testing.T) {
+	w := tagging().Key("@").Key("ctrl+n")
+	if w.tagCursor != 1 {
+		t.Errorf("ctrl+n did not move down: %d", w.tagCursor)
+	}
+
+	w = w.Key("ctrl+p")
+	if w.tagCursor != 0 {
+		t.Errorf("ctrl+p did not move up: %d", w.tagCursor)
+	}
+}
+
+// Typing reorders the list, so a held cursor would point somewhere else.
+func TestTagCursorResetsOnQueryChange(t *testing.T) {
+	w := tagging().Key("@").Key("down")
+	if w.tagCursor != 1 {
+		t.Fatalf("cursor = %d, want 1 before typing", w.tagCursor)
+	}
+
+	w = w.Key("c")
+	if w.tagCursor != 0 {
+		t.Errorf("cursor = %d, want it reset after typing", w.tagCursor)
+	}
+
+	w = w.Key("down").Key("backspace")
+	if w.tagCursor != 0 {
+		t.Errorf("cursor = %d, want it reset after backspace", w.tagCursor)
+	}
+}
+
+func TestTagViewMarksTheCursor(t *testing.T) {
+	w := tagging().Key("@").Key("down")
+
+	m := w.matches()
+	for _, line := range strings.Split(w.View(), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), ">") && !strings.Contains(line, m[1].Rel) {
+			t.Errorf("marker is not on the cursor row: %q", line)
+		}
 	}
 }

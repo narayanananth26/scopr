@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 
+	"scopr/internal/files"
+
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -38,10 +40,23 @@ type Wizard struct {
 	// Available is every repository in the workspace.
 	Available []string
 
-	step   step
-	name   string
-	prompt string
-	scope  Model
+	// LoadFiles reads the taggable files for a scope. It runs once the scope
+	// is settled, so a large workspace is read while the prompt is being
+	// typed rather than before it appears.
+	LoadFiles func([]string) []files.File
+
+	// Files are taggable paths. Nil until loaded, which the tag list reports
+	// rather than pretending to be empty.
+	Files []files.File
+
+	step      step
+	name      string
+	prompt    string
+	scope     Model
+	tagging   bool
+	query     string
+	tagAt     int
+	tagCursor int
 
 	// Err is set when a saved scope could not be loaded.
 	Err error
@@ -144,7 +159,86 @@ func (w Wizard) keyScope(k string) Wizard {
 	return w
 }
 
+// fileLimit is how many matches the tag list shows. More than a screenful is
+// a reason to type another character, not to scroll.
+const fileLimit = 10
+
+// matches are the files the current tag query selects.
+func (w Wizard) matches() []files.File {
+	return files.Match(w.Files, w.query, fileLimit)
+}
+
+func (w Wizard) keyTag(k string) Wizard {
+	switch k {
+	case "ctrl+c":
+		w.Cancelled = true
+
+	case "esc":
+		// Drop the @ too, so escaping leaves no half-typed tag.
+		w.prompt = w.prompt[:w.tagAt]
+		w.tagging = false
+		w.query = ""
+
+	case "up", "ctrl+p":
+		if w.tagCursor > 0 {
+			w.tagCursor--
+		}
+
+	case "down", "ctrl+n":
+		if w.tagCursor < len(w.matches())-1 {
+			w.tagCursor++
+		}
+
+	case "enter", "tab":
+		if m := w.matches(); w.tagCursor < len(m) {
+			w.prompt = w.prompt[:w.tagAt] + "@" + m[w.tagCursor].Rel + " "
+		}
+		w.tagging = false
+		w.query = ""
+
+	case "backspace":
+		if w.query == "" {
+			w.prompt = w.prompt[:w.tagAt]
+			w.tagging = false
+			return w
+		}
+		w.query = w.query[:len(w.query)-1]
+		w.prompt = w.prompt[:w.tagAt] + "@" + w.query
+		// A narrower query reorders the list, so a held cursor would point
+		// at a different file than the one under it a moment ago.
+		w.tagCursor = 0
+
+	case " ":
+		// A space ends a tag nobody completed.
+		w.tagging = false
+		w.query = ""
+		w.prompt += " "
+
+	default:
+		if len([]rune(k)) == 1 {
+			w.query += k
+			w.prompt = w.prompt[:w.tagAt] + "@" + w.query
+			w.tagCursor = 0
+		}
+	}
+
+	return w
+}
+
 func (w Wizard) keyPrompt(k string) Wizard {
+	if w.tagging {
+		return w.keyTag(k)
+	}
+
+	if k == "@" {
+		w.tagging = true
+		w.tagAt = len(w.prompt)
+		w.query = ""
+		w.tagCursor = 0
+		w.prompt += "@"
+		return w
+	}
+
 	switch k {
 	case "ctrl+c":
 		w.Cancelled = true
@@ -177,6 +271,9 @@ func (w Wizard) view() string {
 	case stepScope:
 		return w.scope.View()
 	case stepPrompt:
+		if w.tagging {
+			return w.viewTag()
+		}
 		return w.viewPrompt()
 	}
 	return ""
@@ -220,19 +317,70 @@ func (w Wizard) viewPrompt() string {
 	return b.String()
 }
 
+func (w Wizard) viewTag() string {
+	var b strings.Builder
+
+	b.WriteString("what are you working on?\n")
+	b.WriteString(dim.Render("  tagging a file") + "\n\n")
+	fmt.Fprintf(&b, "  %s%s\n\n", w.prompt, marker.Render("_"))
+
+	switch m := w.matches(); {
+	case w.Files == nil:
+		b.WriteString(dim.Render("  still reading the workspace...") + "\n")
+	case len(m) == 0:
+		b.WriteString(dim.Render("  no files match") + "\n")
+	default:
+		for i, f := range m {
+			if i == w.tagCursor {
+				b.WriteString(marker.Render("> ") + f.Rel + "\n")
+				continue
+			}
+			b.WriteString(dim.Render("  "+f.Rel) + "\n")
+		}
+	}
+
+	b.WriteString("\n" + dim.Render("type to filter  up/down move  enter or tab to tag  esc to drop it") + "\n")
+	return b.String()
+}
+
+// FilesMsg carries the taggable files once they have been read.
+type FilesMsg []files.File
+
+// loadCmd reads the taggable files off the update loop.
+func (w Wizard) loadCmd() tea.Cmd {
+	if w.LoadFiles == nil {
+		return nil
+	}
+	repos := slices.Clone(w.scope.Chosen)
+	return func() tea.Msg { return FilesMsg(w.LoadFiles(repos)) }
+}
+
 // Init satisfies tea.Model.
 func (w Wizard) Init() tea.Cmd { return nil }
 
 // Update satisfies tea.Model.
 func (w Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if loaded, ok := msg.(FilesMsg); ok {
+		w.Files = loaded
+		return w, nil
+	}
+
 	k, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return w, nil
 	}
 
+	before := w.step
 	w = w.Key(k.String())
+
 	if w.Cancelled || w.step == stepDone {
 		return w, tea.Quit
+	}
+
+	// The scope is settled on entering the prompt, so that is when the file
+	// list can be read.
+	if before == stepScope && w.step == stepPrompt && w.Files == nil {
+		return w, w.loadCmd()
 	}
 	return w, nil
 }
