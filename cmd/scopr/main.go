@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -63,7 +64,7 @@ func runList() int {
 		return 1
 	}
 	if len(names) == 0 {
-		fmt.Fprintln(os.Stderr, "no saved scopes; create one with --save")
+		fmt.Fprintln(os.Stderr, "no saved scopes; create one with: scopr save <name> <repo>...")
 		return 0
 	}
 
@@ -322,63 +323,151 @@ func label(args []string) string {
 	return ""
 }
 
+// verbs are reserved: a repository sharing one of these names must be given
+// as a path, such as frontend/list.
+var verbs = []string{"infer", "save", "list", "rename", "delete", "where", "workspace"}
+
 func usage() {
 	fmt.Fprint(os.Stderr, `scopr launches Claude Code scoped to chosen repositories.
 
 usage:
-  scopr                            name, scope and prompt, step by step
-  scopr [flags] <repo|@scope>...   start a session; the first repo becomes the working directory
-  scopr --infer <task>             suggest a scope for the task, then start
-  scopr --save <name> <repo>...    save a scope under that name
-  scopr --rename <old> <new>       rename a saved scope
-  scopr --delete <name>            delete a saved scope
-  scopr --list                     list saved scopes
-  scopr --where                    print the workspace root
+  scopr                             name, scope and prompt, step by step
+  scopr [flags] <repo|@scope>...    start a session; the first repo becomes the working directory
 
-flags:
-  -p <text>                        prompt to submit on start
-  --verbose                        with --infer, show the survey's tool calls
+  scopr infer <task>                suggest a scope for the task, then start
+  scopr save <name> <repo>...       save a scope under that name
+  scopr list                        list saved scopes
+  scopr rename <old> <new>          rename a saved scope
+  scopr delete <name>               delete a saved scope
+  scopr where                       print the workspace root
+
+  scopr workspace add [path]        register a workspace
+  scopr workspace list              list registered workspaces
+  scopr workspace remove <name>     forget a workspace
+
+flags, before the verb:
+  --workspace <name>                which workspace to resolve against
+  -p <text>                         prompt to submit on start
+  --verbose                         with infer, show the survey's tool calls
 
 An @name argument expands to the repositories that scope names, so scopes and
-plain repositories can be mixed. Flags must precede everything else.
+plain repositories can be mixed.
 `)
 }
 
-func main() {
-	flag.Usage = usage
-
-	where := flag.Bool("where", false, "print the workspace root and exit")
-	list := flag.Bool("list", false, "list saved scopes")
-	rename := flag.Bool("rename", false, "rename a saved scope")
-	save := flag.String("save", "", "save the given repositories under this scope name")
-	del := flag.String("delete", "", "delete the named scope")
-	prompt := flag.String("p", "", "prompt to submit on start")
-	infer := flag.String("infer", "", "suggest a scope for this task")
-	verbose := flag.Bool("verbose", false, "show the survey's tool calls and reasoning")
-	flag.Parse()
-
-	args := flag.Args()
-
-	switch {
-	case *where:
-		os.Exit(runWhere())
-	case *list:
-		os.Exit(runList())
-	case *rename:
-		os.Exit(runRename(args))
-	case *del != "":
-		os.Exit(runDelete(*del))
-	case *infer != "":
-		os.Exit(runInfer(*infer, *prompt, *verbose))
-	case *save != "":
-		if len(args) == 0 {
-			fmt.Fprintln(os.Stderr, "usage: scopr --save <name> <repo>...")
-			os.Exit(1)
-		}
-		os.Exit(runSave(strings.TrimPrefix(*save, scope.Prefix), args))
-	case len(args) == 0:
-		os.Exit(runWizard())
-	default:
-		os.Exit(runLaunch(args, *prompt, label(args)))
-	}
+// globals are the flags every verb shares. Parsing them separately is what
+// lets a verb take its own flags after its arguments.
+type globals struct {
+	workspace string
+	prompt    string
+	verbose   bool
 }
+
+// parseGlobals reads the flags before the verb and returns what is left.
+func parseGlobals(argv []string) (globals, []string, error) {
+	fs := flag.NewFlagSet("scopr", flag.ContinueOnError)
+	fs.Usage = usage
+
+	var g globals
+	fs.StringVar(&g.workspace, "workspace", "", "which workspace to resolve against")
+	fs.StringVar(&g.prompt, "p", "", "prompt to submit on start")
+	fs.BoolVar(&g.verbose, "verbose", false, "show the survey's tool calls")
+
+	if err := fs.Parse(argv); err != nil {
+		return g, nil, err
+	}
+	return g, fs.Args(), nil
+}
+
+// verbFlags parses flags appearing after a verb's arguments, so
+// scopr save surfaces gl-panel -p x works.
+func verbFlags(name string, args []string, g *globals) ([]string, error) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.Usage = usage
+	fs.StringVar(&g.prompt, "p", g.prompt, "prompt to submit on start")
+	fs.BoolVar(&g.verbose, "verbose", g.verbose, "show the survey's tool calls")
+
+	// Positionals first, then any flags: flag stops at the first non-flag
+	// argument, so the two are separated before parsing.
+	var positional, flags []string
+	for i, a := range args {
+		if strings.HasPrefix(a, "-") {
+			flags = args[i:]
+			break
+		}
+		positional = append(positional, a)
+	}
+
+	if err := fs.Parse(flags); err != nil {
+		return nil, err
+	}
+	return append(positional, fs.Args()...), nil
+}
+
+func run(argv []string) int {
+	g, args, err := parseGlobals(argv)
+	if err != nil {
+		return 2
+	}
+
+	if len(args) == 0 {
+		return runWizard()
+	}
+
+	verb := args[0]
+
+	// Launching is not a verb, but it takes flags after its arguments too:
+	// scopr gl-panel -p "..." should work.
+	if !slices.Contains(verbs, verb) {
+		names, err := verbFlags("scopr", args, &g)
+		if err != nil {
+			return 2
+		}
+		return runLaunch(names, g.prompt, label(names))
+	}
+
+	rest, err := verbFlags(verb, args[1:], &g)
+	if err != nil {
+		return 2
+	}
+
+	switch verb {
+	case "where":
+		return runWhere()
+
+	case "list":
+		return runList()
+
+	case "rename":
+		return runRename(rest)
+
+	case "delete":
+		if len(rest) != 1 {
+			fmt.Fprintln(os.Stderr, "usage: scopr delete <name>")
+			return 1
+		}
+		return runDelete(rest[0])
+
+	case "infer":
+		if len(rest) == 0 {
+			fmt.Fprintln(os.Stderr, "usage: scopr infer <task>")
+			return 1
+		}
+		return runInfer(strings.Join(rest, " "), g.prompt, g.verbose)
+
+	case "save":
+		if len(rest) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: scopr save <name> <repo>...")
+			return 1
+		}
+		return runSave(strings.TrimPrefix(rest[0], scope.Prefix), rest[1:])
+
+	case "workspace":
+		fmt.Fprintln(os.Stderr, "workspace management is not built yet")
+		return 1
+	}
+
+	return runLaunch(args, g.prompt, label(args))
+}
+
+func main() { os.Exit(run(os.Args[1:])) }
