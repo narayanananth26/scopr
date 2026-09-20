@@ -254,6 +254,22 @@ func TestScanRejectsNamelessFlag(t *testing.T) {
 	}
 }
 
+func TestScanReportsNoTerminatorOnError(t *testing.T) {
+	for _, argv := range [][]string{
+		{"--nope"},
+		{"--verbose=maybe"},
+		{"-w"},
+	} {
+		s, err := cli.Flags.Scan(argv)
+		if err == nil {
+			t.Fatalf("Scan %q: no error", argv)
+		}
+		if s.Terminus != -1 {
+			t.Errorf("Scan %q: terminus = %d, want -1", argv, s.Terminus)
+		}
+	}
+}
+
 func TestHasDistinguishesEmptyFromAbsent(t *testing.T) {
 	s := scanned(t, "-p=")
 

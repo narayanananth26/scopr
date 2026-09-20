@@ -220,7 +220,7 @@ func (t *Table) Scan(argv []string) (Scan, error) {
 
 		f, ok := t.Lookup(name)
 		if !ok {
-			return Scan{}, &UnknownFlagError{Token: tok, Index: i, Suggest: t.nearest(name)}
+			return Scan{Terminus: -1}, &UnknownFlagError{Token: tok, Index: i, Suggest: t.nearest(name)}
 		}
 
 		at := Occurrence{Flag: f, Value: value, Token: tok, Index: i}
@@ -232,12 +232,12 @@ func (t *Table) Scan(argv []string) (Scan, error) {
 		case f.Bool():
 			b, err := strconv.ParseBool(value)
 			if err != nil {
-				return Scan{}, &BoolValueError{Token: tok, Index: i, Value: value}
+				return Scan{Terminus: -1}, &BoolValueError{Token: tok, Index: i, Value: value}
 			}
 			at.Value = strconv.FormatBool(b)
 
 		case !inline && i+1 >= len(argv):
-			return Scan{}, &MissingValueError{Token: tok, Index: i, Arg: f.Arg}
+			return Scan{Terminus: -1}, &MissingValueError{Token: tok, Index: i, Arg: f.Arg}
 
 		case !inline:
 			at.Value = argv[i+1]
