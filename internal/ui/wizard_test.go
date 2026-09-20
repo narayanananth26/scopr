@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"scopr/internal/files"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func wizard() Wizard {
@@ -343,6 +345,7 @@ func tagging() Wizard {
 		{Rel: "src/checkout.ts", Base: "checkout.ts"},
 		{Rel: "../shared/util.ts", Base: "util.ts"},
 	}
+	w.filesLoaded = true
 	return w
 }
 
@@ -648,5 +651,270 @@ func TestWizardNameDoesNotIncludeThePrefix(t *testing.T) {
 
 	if w.Name() != "checkout" {
 		t.Errorf("Name = %q, want checkout without the prefix", w.Name())
+	}
+}
+
+func atPrompt(t *testing.T) Wizard {
+	t.Helper()
+
+	w := type_(pick(wizard(), "Goodlife"), "surfaces").Key("enter").Key("enter")
+	w.Files = []files.File{
+		{Rel: "src/cart.ts", Base: "cart.ts"},
+		{Rel: "src/checkout.ts", Base: "checkout.ts"},
+	}
+	w.filesLoaded = true
+	return w
+}
+
+func TestPromptCursorMovesLeftAndRight(t *testing.T) {
+	w := type_(atPrompt(t), "abc")
+
+	if w.promptAt != 3 {
+		t.Fatalf("cursor = %d, want 3 after typing", w.promptAt)
+	}
+
+	w = w.Key("left").Key("left")
+	if w.promptAt != 1 {
+		t.Errorf("cursor = %d, want 1", w.promptAt)
+	}
+
+	w = w.Key("right")
+	if w.promptAt != 2 {
+		t.Errorf("cursor = %d, want 2", w.promptAt)
+	}
+}
+
+func TestPromptCursorStopsAtEdges(t *testing.T) {
+	w := type_(atPrompt(t), "ab")
+
+	for range 5 {
+		w = w.Key("left")
+	}
+	if w.promptAt != 0 {
+		t.Errorf("cursor = %d, want 0", w.promptAt)
+	}
+
+	for range 5 {
+		w = w.Key("right")
+	}
+	if w.promptAt != 2 {
+		t.Errorf("cursor = %d, want 2", w.promptAt)
+	}
+}
+
+// Typing mid-string must insert, not append.
+func TestPromptInsertsAtCursor(t *testing.T) {
+	w := type_(atPrompt(t), "ac").Key("left")
+	w = w.Key("b")
+
+	if w.prompt != "abc" {
+		t.Errorf("prompt = %q, want abc", w.prompt)
+	}
+	if w.promptAt != 2 {
+		t.Errorf("cursor = %d, want it after the inserted rune", w.promptAt)
+	}
+}
+
+func TestPromptBackspaceDeletesBeforeCursor(t *testing.T) {
+	w := type_(atPrompt(t), "abc").Key("left").Key("backspace")
+
+	if w.prompt != "ac" {
+		t.Errorf("prompt = %q, want ac", w.prompt)
+	}
+	if w.promptAt != 1 {
+		t.Errorf("cursor = %d, want 1", w.promptAt)
+	}
+}
+
+func TestPromptDeleteRemovesAtCursor(t *testing.T) {
+	w := type_(atPrompt(t), "abc").Key("left").Key("delete")
+
+	if w.prompt != "ab" {
+		t.Errorf("prompt = %q, want ab", w.prompt)
+	}
+}
+
+func TestPromptHomeAndEnd(t *testing.T) {
+	w := type_(atPrompt(t), "abc").Key("home")
+	if w.promptAt != 0 {
+		t.Errorf("home left cursor at %d", w.promptAt)
+	}
+
+	w = w.Key("end")
+	if w.promptAt != 3 {
+		t.Errorf("end left cursor at %d", w.promptAt)
+	}
+}
+
+func TestPromptKillLineBothWays(t *testing.T) {
+	w := type_(atPrompt(t), "abcdef").Key("left").Key("left")
+
+	if got := w.Key("ctrl+k"); got.prompt != "abcd" {
+		t.Errorf("ctrl+k gave %q, want abcd", got.prompt)
+	}
+	if got := w.Key("ctrl+u"); got.prompt != "ef" {
+		t.Errorf("ctrl+u gave %q, want ef", got.prompt)
+	}
+}
+
+// Multibyte text must not be cut apart.
+func TestPromptHandlesMultibyte(t *testing.T) {
+	w := type_(atPrompt(t), "héllo").Key("left").Key("backspace")
+
+	if w.prompt != "hélo" {
+		t.Errorf("prompt = %q, want hélo", w.prompt)
+	}
+}
+
+// A tag goes in at the cursor, keeping whatever followed it.
+func TestTagInsertsAtCursor(t *testing.T) {
+	w := type_(atPrompt(t), "look at  please")
+	for range 7 {
+		w = w.Key("left")
+	}
+
+	w = type_(w.Key("@"), "checkout").Key("enter")
+
+	if want := "look at @src/checkout.ts  please"; w.prompt != want {
+		t.Errorf("prompt = %q, want %q", w.prompt, want)
+	}
+}
+
+func TestTagEscapeKeepsWhatFollowed(t *testing.T) {
+	w := type_(atPrompt(t), "ab")
+	w = w.Key("left")
+	w = type_(w.Key("@"), "che").Key("esc")
+
+	if w.prompt != "ab" {
+		t.Errorf("prompt = %q, want ab", w.prompt)
+	}
+	if w.promptAt != 1 {
+		t.Errorf("cursor = %d, want it back where the tag started", w.promptAt)
+	}
+}
+
+// The cursor must be visible wherever it sits, not only at the end.
+func TestPromptCursorIsVisibleMidString(t *testing.T) {
+	w := type_(atPrompt(t), "abc").Key("left").Key("left")
+
+	got := w.promptLine()
+	if got == "abc" {
+		t.Errorf("promptLine = %q, want the cursor rendered", got)
+	}
+	if !strings.Contains(got, cursor.Render("b")) {
+		t.Errorf("promptLine = %q, want b under the cursor", got)
+	}
+}
+
+func TestPromptCursorVisibleAtEnd(t *testing.T) {
+	w := type_(atPrompt(t), "abc")
+
+	if got := w.promptLine(); !strings.HasPrefix(got, "abc") || got == "abc" {
+		t.Errorf("promptLine = %q, want a cursor after the text", got)
+	}
+}
+
+// key is pure, so it flags the request and the update loop spawns the editor.
+func TestPromptCtrlOAsksForTheEditor(t *testing.T) {
+	w := type_(atPrompt(t), "why is checkout called twice").Key("ctrl+o")
+
+	if !w.editing {
+		t.Error("ctrl+o did not ask for the editor")
+	}
+	if w.prompt != "why is checkout called twice" {
+		t.Errorf("prompt = %q, want it untouched", w.prompt)
+	}
+}
+
+func TestPromptTakesBackWhatTheEditorWrote(t *testing.T) {
+	w := atPrompt(t)
+
+	out, _ := w.Update(EditedMsg{Text: "rewritten in the editor"})
+	w = out.(Wizard)
+
+	if w.prompt != "rewritten in the editor" {
+		t.Errorf("prompt = %q, want the edited text", w.prompt)
+	}
+	if w.promptAt != len([]rune(w.prompt)) {
+		t.Errorf("cursor = %d, want it at the end", w.promptAt)
+	}
+}
+
+// A failed editor must not silently discard what was typed.
+func TestPromptKeepsTextWhenTheEditorFails(t *testing.T) {
+	w := type_(atPrompt(t), "typed by hand")
+
+	out, _ := w.Update(EditedMsg{Err: errors.New("editor exploded")})
+	w = out.(Wizard)
+
+	if w.prompt != "typed by hand" {
+		t.Errorf("prompt = %q, want it kept", w.prompt)
+	}
+	if w.Err == nil {
+		t.Fatal("a failed edit reported no error")
+	}
+	if !strings.Contains(w.View(), "exploded") {
+		t.Errorf("view does not show the failure:\n%s", w.View())
+	}
+}
+
+// ctrl+e stays end-of-line; the editor must not have taken it.
+func TestPromptCtrlEStillMovesToEnd(t *testing.T) {
+	w := type_(atPrompt(t), "abc").Key("home").Key("ctrl+e")
+
+	if w.editing {
+		t.Error("ctrl+e asked for the editor")
+	}
+	if w.promptAt != 3 {
+		t.Errorf("cursor = %d, want it at the end", w.promptAt)
+	}
+}
+
+// The workspace must reach LoadFiles: it is chosen after the caller builds
+// the wizard, so a closure over the wizard would capture an empty one.
+func TestLoadFilesReceivesTheChosenWorkspace(t *testing.T) {
+	var gotRoot string
+	var gotRepos []string
+
+	w := wizard()
+	w.LoadFiles = func(root string, names []string) []files.File {
+		gotRoot, gotRepos = root, names
+		return []files.File{{Rel: "cmd/main.go", Base: "main.go"}}
+	}
+
+	w = type_(pick(w, "scopr"), "core").Key("enter") // scope step
+	out, cmd := w.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	w = out.(Wizard)
+
+	if cmd == nil {
+		t.Fatal("entering the prompt step issued no load")
+	}
+	msg := cmd()
+
+	if gotRoot != "/w/scopr" {
+		t.Errorf("LoadFiles got root %q, want /w/scopr", gotRoot)
+	}
+	if want := []string{"cmd"}; !slices.Equal(gotRepos, want) {
+		t.Errorf("LoadFiles got repos %v, want %v", gotRepos, want)
+	}
+
+	out, _ = w.Update(msg)
+	if got := out.(Wizard); !got.filesLoaded || len(got.Files) != 1 {
+		t.Errorf("files not taken up: loaded=%v files=%v", got.filesLoaded, got.Files)
+	}
+}
+
+// A scope with no files is not the same as one still being read.
+func TestTagSaysWhenTheScopeHasNoFiles(t *testing.T) {
+	w := atPrompt(t)
+	w.Files = nil
+	w.filesLoaded = true
+
+	got := w.Key("@").View()
+	if !strings.Contains(got, "no files found") {
+		t.Errorf("view does not distinguish empty from unread:\n%s", got)
+	}
+	if strings.Contains(got, "still reading") {
+		t.Errorf("view still claims to be reading:\n%s", got)
 	}
 }

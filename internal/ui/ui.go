@@ -14,10 +14,20 @@ import (
 // outcome when nobody chose anything.
 var ErrCancelled = errors.New("selection cancelled")
 
+// renderer draws to stderr, where the screens go. lipgloss's default renderer
+// detects the colour profile from stdout; when stdout is redirected it decides
+// the terminal has no colour and silently strips every style, including the
+// cursor.
+var renderer = lipgloss.NewRenderer(os.Stderr)
+
 var (
-	dim     = lipgloss.NewStyle().Faint(true)
-	primary = lipgloss.NewStyle().Bold(true)
-	marker  = lipgloss.NewStyle().Bold(true)
+	dim     = renderer.NewStyle().Faint(true)
+	primary = renderer.NewStyle().Bold(true)
+	marker  = renderer.NewStyle().Bold(true)
+
+	// cursor is reverse video, so it reads as a block sitting on a character.
+	// Bold alone is invisible on a character that is already there.
+	cursor = renderer.NewStyle().Reverse(true)
 )
 
 // Init satisfies tea.Model.
@@ -127,7 +137,7 @@ func (m Model) viewAdd() string {
 
 // Run shows the editor and returns the accepted scope.
 func Run(m Model) ([]string, error) {
-	out, err := tea.NewProgram(m, tea.WithOutput(os.Stderr)).Run()
+	out, err := tea.NewProgram(m, tea.WithOutput(os.Stderr), tea.WithAltScreen()).Run()
 	if err != nil {
 		return nil, fmt.Errorf("run editor: %w", err)
 	}

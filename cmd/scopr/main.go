@@ -194,9 +194,7 @@ func runWizard(g globals) int {
 		},
 	)
 
-	wiz.LoadFiles = func(names []string) []files.File {
-		return taggableFiles(wiz.Root(), names)
-	}
+	wiz.LoadFiles = taggableFiles
 
 	w, err := ui.RunWizard(wiz)
 	if errors.Is(err, ui.ErrCancelled) {

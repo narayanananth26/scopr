@@ -65,14 +65,15 @@ type Wizard struct {
 	// ReposIn returns every repository in a workspace.
 	ReposIn func(root string) []string
 
-	// LoadFiles reads the taggable files for a scope. It runs once the scope
-	// is settled, so a large workspace is read while the prompt is being
-	// typed rather than before it appears.
-	LoadFiles func([]string) []files.File
+	// LoadFiles reads the taggable files for a scope
+	LoadFiles func(root string, names []string) []files.File
 
-	// Files are taggable paths. Nil until loaded, which the tag list reports
-	// rather than pretending to be empty.
+	// Files are the taggable paths, once read.
 	Files []files.File
+
+	// filesLoaded separates "not read yet" from "read, and there are none",
+	// which an empty slice cannot.
+	filesLoaded bool
 
 	step   step
 	name   string
@@ -85,11 +86,18 @@ type Wizard struct {
 	space  Space
 	chosen Entry
 
-	prompt    string
-	scope     Model
+	prompt   string
+	scope    Model
+	promptAt int
+
+	// editing asks the update loop to hand the prompt to an external editor.
+	// key is pure, so it cannot spawn a process itself.
+	editing bool
+
 	tagging   bool
 	query     string
-	tagAt     int
+	tagHead   string
+	tagTail   string
 	tagCursor int
 
 	// Err is set when a saved scope could not be loaded.
@@ -321,9 +329,7 @@ func (w Wizard) keyTag(k string) Wizard {
 
 	case "esc":
 		// Drop the @ too, so escaping leaves no half-typed tag.
-		w.prompt = w.prompt[:w.tagAt]
-		w.tagging = false
-		w.query = ""
+		w = w.endTag("")
 
 	case "up", "ctrl+p":
 		if w.tagCursor > 0 {
@@ -337,37 +343,60 @@ func (w Wizard) keyTag(k string) Wizard {
 
 	case "enter", "tab":
 		if m := w.matches(); w.tagCursor < len(m) {
-			w.prompt = w.prompt[:w.tagAt] + "@" + m[w.tagCursor].Rel + " "
+			w = w.endTag("@" + m[w.tagCursor].Rel + " ")
+		} else {
+			w = w.endTag("")
 		}
-		w.tagging = false
-		w.query = ""
 
 	case "backspace":
 		if w.query == "" {
-			w.prompt = w.prompt[:w.tagAt]
-			w.tagging = false
-			return w
+			return w.endTag("")
 		}
 		w.query = w.query[:len(w.query)-1]
-		w.prompt = w.prompt[:w.tagAt] + "@" + w.query
 		// A narrower query reorders the list, so a held cursor would point
 		// at a different file than the one under it a moment ago.
 		w.tagCursor = 0
+		w = w.redrawTag()
 
 	case " ":
 		// A space ends a tag nobody completed.
-		w.tagging = false
-		w.query = ""
-		w.prompt += " "
+		w = w.endTag("@" + w.query + " ")
 
 	default:
 		if len([]rune(k)) == 1 {
 			w.query += k
-			w.prompt = w.prompt[:w.tagAt] + "@" + w.query
 			w.tagCursor = 0
+			w = w.redrawTag()
 		}
 	}
 
+	return w
+}
+
+// redrawTag rewrites the prompt around the tag being typed.
+func (w Wizard) redrawTag() Wizard {
+	w.prompt = w.tagHead + "@" + w.query + w.tagTail
+	w.promptAt = len([]rune(w.tagHead)) + 1 + len([]rune(w.query))
+	return w
+}
+
+// endTag closes tag mode, putting inserted in place of what was typed.
+func (w Wizard) endTag(inserted string) Wizard {
+	w.prompt = w.tagHead + inserted + w.tagTail
+	w.promptAt = len([]rune(w.tagHead)) + len([]rune(inserted))
+	w.tagging = false
+	w.query = ""
+	w.tagHead, w.tagTail = "", ""
+	return w
+}
+
+// insertPrompt puts s at the cursor.
+func (w Wizard) insertPrompt(s string) Wizard {
+	r := []rune(w.prompt)
+	at := min(w.promptAt, len(r))
+
+	w.prompt = string(r[:at]) + s + string(r[at:])
+	w.promptAt = at + len([]rune(s))
 	return w
 }
 
@@ -376,14 +405,8 @@ func (w Wizard) keyPrompt(k string) Wizard {
 		return w.keyTag(k)
 	}
 
-	if k == "@" {
-		w.tagging = true
-		w.tagAt = len(w.prompt)
-		w.query = ""
-		w.tagCursor = 0
-		w.prompt += "@"
-		return w
-	}
+	r := []rune(w.prompt)
+	at := min(w.promptAt, len(r))
 
 	switch k {
 	case "ctrl+c":
@@ -396,18 +419,70 @@ func (w Wizard) keyPrompt(k string) Wizard {
 	case "enter":
 		w.step = stepDone
 
-	case "backspace":
-		if w.prompt != "" {
-			w.prompt = w.prompt[:len(w.prompt)-1]
+	// ctrl+e is end-of-line, so the editor gets ctrl+o: open.
+	case "ctrl+o":
+		w.editing = true
+
+	case "@":
+		w.tagging = true
+		w.tagHead = string(r[:at])
+		w.tagTail = string(r[at:])
+		w.query = ""
+		w.tagCursor = 0
+		w = w.redrawTag()
+
+	case "left", "ctrl+b":
+		if at > 0 {
+			w.promptAt = at - 1
 		}
+
+	case "right", "ctrl+f":
+		if at < len(r) {
+			w.promptAt = at + 1
+		}
+
+	case "home", "ctrl+a":
+		w.promptAt = 0
+
+	case "end", "ctrl+e":
+		w.promptAt = len(r)
+
+	case "backspace":
+		if at > 0 {
+			w.prompt = string(r[:at-1]) + string(r[at:])
+			w.promptAt = at - 1
+		}
+
+	case "delete", "ctrl+d":
+		if at < len(r) {
+			w.prompt = string(r[:at]) + string(r[at+1:])
+		}
+
+	case "ctrl+u":
+		w.prompt = string(r[at:])
+		w.promptAt = 0
+
+	case "ctrl+k":
+		w.prompt = string(r[:at])
 
 	default:
 		if len([]rune(k)) == 1 {
-			w.prompt += k
+			w = w.insertPrompt(k)
 		}
 	}
 
 	return w
+}
+
+// promptLine renders the prompt with the cursor in place.
+func (w Wizard) promptLine() string {
+	r := []rune(w.prompt)
+	at := min(w.promptAt, len(r))
+
+	if at >= len(r) {
+		return w.prompt + cursor.Render(" ")
+	}
+	return string(r[:at]) + cursor.Render(string(r[at])) + string(r[at+1:])
 }
 
 func (w Wizard) view() string {
@@ -473,7 +548,7 @@ func (w Wizard) viewName() string {
 
 	b.WriteString("what are you working on?\n")
 	b.WriteString(dim.Render("  in "+w.space.Name) + "\n\n")
-	fmt.Fprintf(&b, "  %s%s%s\n\n", dim.Render(scopePrefix), w.name, marker.Render("_"))
+	fmt.Fprintf(&b, "  %s%s%s\n\n", dim.Render(scopePrefix), w.name, cursor.Render(" "))
 
 	if w.Err != nil {
 		b.WriteString(dim.Render("  "+w.Err.Error()) + "\n\n")
@@ -532,11 +607,15 @@ func (w Wizard) viewPrompt() string {
 	var b strings.Builder
 
 	b.WriteString("what are you working on?\n")
-	b.WriteString(dim.Render("  submitted when the session starts") + "\n\n")
-	fmt.Fprintf(&b, "  %s%s\n\n", w.prompt, marker.Render("_"))
+	b.WriteString(dim.Render("  submitted when the session starts") + "\n")
+	if w.Err != nil {
+		b.WriteString(dim.Render("  "+w.Err.Error()) + "\n")
+	}
+	b.WriteString("\n")
+	fmt.Fprintf(&b, "  %s\n\n", w.promptLine())
 
 	b.WriteString(dim.Render("  "+strings.Join(w.scope.Chosen, "  ")) + "\n")
-	b.WriteString("\n" + dim.Render("enter start  esc back  blank to start without one") + "\n")
+	b.WriteString("\n" + dim.Render("@ tag a file  ctrl+o "+editorName()+"  enter start  esc back") + "\n")
 
 	return b.String()
 }
@@ -546,11 +625,13 @@ func (w Wizard) viewTag() string {
 
 	b.WriteString("what are you working on?\n")
 	b.WriteString(dim.Render("  tagging a file") + "\n\n")
-	fmt.Fprintf(&b, "  %s%s\n\n", w.prompt, marker.Render("_"))
+	fmt.Fprintf(&b, "  %s\n\n", w.promptLine())
 
 	switch m := w.matches(); {
-	case w.Files == nil:
-		b.WriteString(dim.Render("  still reading the workspace...") + "\n")
+	case !w.filesLoaded:
+		b.WriteString(dim.Render("  still reading the scope...") + "\n")
+	case len(w.Files) == 0:
+		b.WriteString(dim.Render("  no files found in this scope") + "\n")
 	case len(m) == 0:
 		b.WriteString(dim.Render("  no files match") + "\n")
 	default:
@@ -575,8 +656,9 @@ func (w Wizard) loadCmd() tea.Cmd {
 	if w.LoadFiles == nil {
 		return nil
 	}
+	root := w.space.Root
 	repos := slices.Clone(w.scope.Chosen)
-	return func() tea.Msg { return FilesMsg(w.LoadFiles(repos)) }
+	return func() tea.Msg { return FilesMsg(w.LoadFiles(root, repos)) }
 }
 
 // Init satisfies tea.Model.
@@ -586,6 +668,18 @@ func (w Wizard) Init() tea.Cmd { return nil }
 func (w Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if loaded, ok := msg.(FilesMsg); ok {
 		w.Files = loaded
+		w.filesLoaded = true
+		return w, nil
+	}
+
+	if edited, ok := msg.(EditedMsg); ok {
+		if edited.Err != nil {
+			w.Err = edited.Err
+			return w, nil
+		}
+		w.Err = nil
+		w.prompt = edited.Text
+		w.promptAt = len([]rune(w.prompt))
 		return w, nil
 	}
 
@@ -601,9 +695,14 @@ func (w Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return w, tea.Quit
 	}
 
+	if w.editing {
+		w.editing = false
+		return w, editExternally(w.prompt)
+	}
+
 	// The scope is settled on entering the prompt, so that is when the file
 	// list can be read.
-	if before == stepScope && w.step == stepPrompt && w.Files == nil {
+	if before == stepScope && w.step == stepPrompt && !w.filesLoaded {
 		return w, w.loadCmd()
 	}
 	return w, nil
@@ -613,7 +712,7 @@ func (w Wizard) View() string { return w.view() }
 
 // RunWizard walks name, scope and prompt, and reports what was chosen.
 func RunWizard(w Wizard) (Wizard, error) {
-	out, err := tea.NewProgram(w, tea.WithOutput(os.Stderr)).Run()
+	out, err := tea.NewProgram(w, tea.WithOutput(os.Stderr), tea.WithAltScreen()).Run()
 	if err != nil {
 		return Wizard{}, fmt.Errorf("run wizard: %w", err)
 	}
