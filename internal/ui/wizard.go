@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"scopr/internal/files"
+	"scopr/internal/scopefile"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -19,26 +20,50 @@ const scopePrefix = "@"
 type step int
 
 const (
-	stepName step = iota
+	stepWorkspace step = iota
+	stepName
 	stepScope
 	stepPrompt
 	stepDone
 )
 
+// Space is a workspace to work in.
+type Space struct {
+	Name string
+	Root string
+}
+
+// Entry is a saved scope the name step can start from.
+type Entry struct {
+	// Root is the workspace holding it.
+	Root string
+
+	// Scope is the saved scope's name.
+	Scope string
+
+	// Repos is what it holds, for showing beside it.
+	Repos []string
+}
+
 // Wizard walks name, then scope, then prompt.
 //
-// The name step doubles as scope selection: an existing name loads that scope,
-// a new one saves what you build, and a blank one starts an unsaved session.
+// The name step is where the workspace is chosen: every entry names one, so
+// picking a scope picks its workspace too. Typing a name that matches nothing
+// offers to create it, once per workspace, so the ambiguity is visible rather
+// than guessed at.
 type Wizard struct {
-	// Saved is the existing scope names, for loading and for telling a new
-	// name from an existing one.
-	Saved []string
+	// Spaces are the workspaces to choose between, the one you are standing
+	// in first.
+	Spaces []Space
+
+	// Entries are the saved scopes across all of them.
+	Entries []Entry
 
 	// Load returns the repositories a saved scope holds.
-	Load func(name string) ([]string, error)
+	Load func(root, name string) ([]string, error)
 
-	// Available is every repository in the workspace.
-	Available []string
+	// ReposIn returns every repository in a workspace.
+	ReposIn func(root string) []string
 
 	// LoadFiles reads the taggable files for a scope. It runs once the scope
 	// is settled, so a large workspace is read while the prompt is being
@@ -49,8 +74,17 @@ type Wizard struct {
 	// rather than pretending to be empty.
 	Files []files.File
 
-	step      step
-	name      string
+	step   step
+	name   string
+	nameAt int
+
+	wsAt int
+
+	// space is the workspace chosen at the first step; chosen is the scope
+	// chosen at the second, empty when starting fresh.
+	space  Space
+	chosen Entry
+
 	prompt    string
 	scope     Model
 	tagging   bool
@@ -64,27 +98,70 @@ type Wizard struct {
 	Cancelled bool
 }
 
-func NewWizard(saved, available []string, load func(string) ([]string, error)) Wizard {
-	return Wizard{
-		Saved:     slices.Clone(saved),
-		Available: slices.Clone(available),
-		Load:      load,
-		scope:     New(nil, available),
+func NewWizard(spaces []Space, entries []Entry, load func(root, name string) ([]string, error), repos func(root string) []string) Wizard {
+	w := Wizard{
+		Spaces:  slices.Clone(spaces),
+		Entries: slices.Clone(entries),
+		Load:    load,
+		ReposIn: repos,
 	}
+
+	// One workspace is not a choice.
+	if len(spaces) == 1 {
+		w.space = spaces[0]
+		w.step = stepName
+	}
+	return w
 }
 
-// Name is the scope name to save under, empty when the session is unsaved.
-// It is empty for an existing scope too, which needs no saving.
+// matchesName are the chosen workspace's scopes the typed name selects, plus a
+// create entry when the name matches none of them.
+func (w Wizard) matchesName() []Entry {
+	q := strings.ToLower(strings.TrimSpace(w.name))
+
+	var hits []Entry
+	for _, e := range w.Entries {
+		if e.Root != w.space.Root {
+			continue
+		}
+		if q == "" || strings.Contains(strings.ToLower(e.Scope), q) {
+			hits = append(hits, e)
+		}
+	}
+
+	// An unnamed session is still a session: without this, a blank name and
+	// enter would load the first saved scope instead of starting fresh.
+	if q == "" {
+		return append(hits, Entry{Root: w.space.Root})
+	}
+
+	// A name that cannot be saved must not be offered: the wizard would run
+	// to the end and fail at the write.
+	if scopefile.ValidName(strings.TrimSpace(w.name)) != nil {
+		return hits
+	}
+
+	if !slices.ContainsFunc(hits, func(e Entry) bool { return strings.EqualFold(e.Scope, q) }) {
+		hits = append(hits, Entry{Root: w.space.Root, Scope: strings.TrimSpace(w.name)})
+	}
+	return hits
+}
+
+// Name is the scope name to save under, empty when nothing should be written:
+// an existing scope needs no saving, and a workspace entry names nothing.
 func (w Wizard) Name() string {
-	if w.existing() {
+	if w.chosen.Scope == "" || w.existingScope() {
 		return ""
 	}
-	return w.name
+	return w.chosen.Scope
 }
 
-// Label is what the session was called, whether or not it will be saved. A
-// name is useful for the terminal tab even when nothing is written.
-func (w Wizard) Label() string { return strings.TrimSpace(w.name) }
+// Root is the workspace the session belongs to.
+func (w Wizard) Root() string { return w.space.Root }
+
+// Label is what the session was called, whether or not it is saved. A name is
+// useful for the terminal tab even when nothing is written.
+func (w Wizard) Label() string { return w.chosen.Scope }
 
 // Repos is the chosen scope.
 func (w Wizard) Repos() []string { return w.scope.Result() }
@@ -95,14 +172,22 @@ func (w Wizard) Prompt() string { return strings.TrimSpace(w.prompt) }
 // Done reports that the wizard finished and a session should start.
 func (w Wizard) Done() bool { return w.step == stepDone && !w.Cancelled }
 
-// existing reports whether the typed name is already a saved scope.
-func (w Wizard) existing() bool {
-	return slices.Contains(w.Saved, strings.TrimSpace(w.name))
+// existingScope reports whether the chosen entry is a scope that already
+// exists, rather than one about to be created.
+func (w Wizard) existingScope() bool {
+	for _, e := range w.Entries {
+		if e.Root == w.space.Root && e.Scope != "" && e.Scope == w.chosen.Scope {
+			return true
+		}
+	}
+	return false
 }
 
 // Key applies one keystroke.
 func (w Wizard) Key(k string) Wizard {
 	switch w.step {
+	case stepWorkspace:
+		return w.keyWorkspace(k)
 	case stepName:
 		return w.keyName(k)
 	case stepScope:
@@ -113,30 +198,87 @@ func (w Wizard) Key(k string) Wizard {
 	return w
 }
 
-func (w Wizard) keyName(k string) Wizard {
+func (w Wizard) keyWorkspace(k string) Wizard {
 	switch k {
-	case "ctrl+c", "esc":
+	case "ctrl+c", "esc", "q":
 		w.Cancelled = true
 
+	case "up", "k", "ctrl+p":
+		if w.wsAt > 0 {
+			w.wsAt--
+		}
+
+	case "down", "j", "ctrl+n":
+		if w.wsAt < len(w.Spaces)-1 {
+			w.wsAt++
+		}
+
 	case "enter":
-		if w.existing() {
-			repos, err := w.Load(strings.TrimSpace(w.name))
+		if len(w.Spaces) == 0 {
+			return w
+		}
+		w.space = w.Spaces[min(w.wsAt, len(w.Spaces)-1)]
+		w.step = stepName
+	}
+
+	return w
+}
+
+func (w Wizard) keyName(k string) Wizard {
+	switch k {
+	case "ctrl+c":
+		w.Cancelled = true
+
+	case "esc":
+		if len(w.Spaces) > 1 {
+			w.step = stepWorkspace
+			w.Err = nil
+			return w
+		}
+		w.Cancelled = true
+
+	case "up", "ctrl+p":
+		if w.nameAt > 0 {
+			w.nameAt--
+		}
+
+	case "down", "ctrl+n":
+		if w.nameAt < len(w.matchesName())-1 {
+			w.nameAt++
+		}
+
+	case "enter":
+		hits := w.matchesName()
+		if len(hits) == 0 {
+			return w
+		}
+		w.chosen = hits[min(w.nameAt, len(hits)-1)]
+
+		var repos []string
+		if w.existingScope() {
+			loaded, err := w.Load(w.space.Root, w.chosen.Scope)
 			if err != nil {
 				w.Err = err
 				return w
 			}
-			w.scope = New(repos, w.Available)
+			repos = loaded
 		}
+
+		w.scope = New(repos, w.ReposIn(w.space.Root))
 		w.step = stepScope
 
 	case "backspace":
 		if w.name != "" {
 			w.name = w.name[:len(w.name)-1]
+			w.nameAt = 0
 		}
 
 	default:
 		if len([]rune(k)) == 1 {
 			w.name += k
+			// Typing reorders the list, so a held cursor would point at a
+			// different entry than the one under it a moment ago.
+			w.nameAt = 0
 		}
 	}
 
@@ -270,6 +412,8 @@ func (w Wizard) keyPrompt(k string) Wizard {
 
 func (w Wizard) view() string {
 	switch w.step {
+	case stepWorkspace:
+		return w.viewWorkspace()
 	case stepName:
 		return w.viewName()
 	case stepScope:
@@ -283,28 +427,104 @@ func (w Wizard) view() string {
 	return ""
 }
 
+func (w Wizard) viewWorkspace() string {
+	var b strings.Builder
+
+	b.WriteString("which workspace?\n\n")
+
+	if len(w.Spaces) == 0 {
+		b.WriteString(dim.Render("  none registered - add one with: scopr workspace add") + "\n")
+	}
+
+	width := 0
+	for _, sp := range w.Spaces {
+		width = max(width, len(sp.Name))
+	}
+
+	for i, sp := range w.Spaces {
+		cursor := "  "
+		if i == w.wsAt {
+			cursor = marker.Render("> ")
+		}
+
+		n := 0
+		for _, e := range w.Entries {
+			if e.Root == sp.Root {
+				n++
+			}
+		}
+
+		scopes := dim.Render("  no saved scopes")
+		if n == 1 {
+			scopes = dim.Render("  1 scope")
+		} else if n > 1 {
+			scopes = dim.Render(fmt.Sprintf("  %d scopes", n))
+		}
+
+		b.WriteString(cursor + sp.Name + strings.Repeat(" ", width-len(sp.Name)) + scopes + "\n")
+	}
+
+	b.WriteString("\n" + dim.Render("j/k move  enter continue  esc cancel") + "\n")
+	return b.String()
+}
+
 func (w Wizard) viewName() string {
 	var b strings.Builder
 
-	b.WriteString("name this session\n\n")
-	fmt.Fprintf(&b, "  %s%s\n\n", w.name, marker.Render("_"))
+	b.WriteString("what are you working on?\n")
+	b.WriteString(dim.Render("  in "+w.space.Name) + "\n\n")
+	fmt.Fprintf(&b, "  %s%s%s\n\n", dim.Render(scopePrefix), w.name, marker.Render("_"))
 
-	switch name := strings.TrimSpace(w.name); {
-	case w.Err != nil:
-		b.WriteString(dim.Render("  "+w.Err.Error()) + "\n")
-	case name == "":
-		b.WriteString(dim.Render("  unnamed - no tab label, and the scope is not saved") + "\n")
-	case w.existing():
-		b.WriteString(dim.Render("  loads "+scopePrefix+name) + "\n")
-	default:
-		b.WriteString(dim.Render("  saves as "+scopePrefix+name) + "\n")
+	if w.Err != nil {
+		b.WriteString(dim.Render("  "+w.Err.Error()) + "\n\n")
 	}
 
-	if len(w.Saved) > 0 {
-		b.WriteString("\n" + dim.Render("  saved: "+scopePrefix+strings.Join(w.Saved, "  "+scopePrefix)) + "\n")
+	hits := w.matchesName()
+	if len(hits) == 0 {
+		if err := scopefile.ValidName(strings.TrimSpace(w.name)); err != nil && w.name != "" {
+			b.WriteString(dim.Render("  "+err.Error()) + "\n")
+		} else {
+			b.WriteString(dim.Render("  nothing matches") + "\n")
+		}
 	}
 
-	b.WriteString("\n" + dim.Render("enter continue  esc cancel") + "\n")
+	// Scopes are written @name everywhere else, so they read that way here.
+	width := len("(unnamed)")
+	for _, e := range hits {
+		if e.Scope != "" {
+			width = max(width, len(scopePrefix)+len(e.Scope))
+		}
+	}
+
+	for i, e := range hits {
+		if i >= 12 {
+			b.WriteString(dim.Render(fmt.Sprintf("  ... %d more", len(hits)-i)) + "\n")
+			break
+		}
+
+		cursor := "  "
+		if i == w.nameAt {
+			cursor = marker.Render("> ")
+		}
+
+		shown := scopePrefix + e.Scope
+		if e.Scope == "" {
+			shown = "(unnamed)"
+		}
+		b.WriteString(cursor + shown + strings.Repeat(" ", width-len(shown)))
+
+		switch {
+		case e.Scope == "":
+			b.WriteString(dim.Render("  start fresh, unnamed"))
+		case len(e.Repos) > 0:
+			b.WriteString(dim.Render("  " + strings.Join(e.Repos, " ")))
+		default:
+			b.WriteString(dim.Render("  new"))
+		}
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n" + dim.Render("type to filter  up/down move  enter continue  esc back") + "\n")
 	return b.String()
 }
 

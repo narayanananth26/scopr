@@ -10,19 +10,36 @@ import (
 )
 
 func wizard() Wizard {
-	return NewWizard(
-		[]string{"surfaces", "native"},
-		[]string{"apps/web", "apps/shared", "services/api"},
-		func(name string) ([]string, error) {
-			switch name {
-			case "surfaces":
-				return []string{"apps/web", "apps/shared"}, nil
-			case "native":
-				return []string{"apps/web", "services/api"}, nil
-			}
-			return nil, errors.New("no such scope: " + name)
-		},
-	)
+	spaces := []Space{
+		{Name: "Goodlife", Root: "/w/Goodlife"},
+		{Name: "scopr", Root: "/w/scopr"},
+	}
+	entries := []Entry{
+		{Root: "/w/Goodlife", Scope: "surfaces", Repos: []string{"apps/web", "apps/shared"}},
+		{Root: "/w/Goodlife", Scope: "native", Repos: []string{"apps/web", "services/api"}},
+		{Root: "/w/scopr", Scope: "core", Repos: []string{"cmd"}},
+	}
+
+	load := func(root, name string) ([]string, error) {
+		switch root + "/" + name {
+		case "/w/Goodlife/surfaces":
+			return []string{"apps/web", "apps/shared"}, nil
+		case "/w/Goodlife/native":
+			return []string{"apps/web", "services/api"}, nil
+		case "/w/scopr/core":
+			return []string{"cmd"}, nil
+		}
+		return nil, errors.New("no such scope: " + name)
+	}
+
+	repos := func(root string) []string {
+		if root == "/w/scopr" {
+			return []string{"cmd", "internal"}
+		}
+		return []string{"apps/web", "apps/shared", "services/api"}
+	}
+
+	return NewWizard(spaces, entries, load, repos)
 }
 
 func type_(w Wizard, s string) Wizard {
@@ -32,85 +49,182 @@ func type_(w Wizard, s string) Wizard {
 	return w
 }
 
-func TestWizardStartsAtName(t *testing.T) {
+// pick chooses a workspace by name, then continues.
+func pick(w Wizard, name string) Wizard {
+	for i, sp := range w.Spaces {
+		if sp.Name == name {
+			for range i {
+				w = w.Key("down")
+			}
+			return w.Key("enter")
+		}
+	}
+	panic("no such workspace in fixture: " + name)
+}
+
+func TestWizardStartsAtWorkspace(t *testing.T) {
 	got := wizard().View()
 
-	if !strings.Contains(got, "name this session") {
-		t.Errorf("wizard did not start at the name step:\n%s", got)
+	if !strings.Contains(got, "which workspace") {
+		t.Errorf("wizard did not start at the workspace step:\n%s", got)
+	}
+	for _, want := range []string{"Goodlife", "scopr"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("workspace step missing %q:\n%s", want, got)
+		}
 	}
 }
 
-// An existing name loads that scope rather than starting empty.
-func TestWizardExistingNameLoadsScope(t *testing.T) {
-	w := type_(wizard(), "surfaces")
-	w = w.Key("enter")
+func TestWizardWorkspaceStepCountsScopes(t *testing.T) {
+	got := wizard().View()
 
-	if want := []string{"apps/web", "apps/shared"}; !slices.Equal(w.scope.Chosen, want) {
+	if !strings.Contains(got, "2 scopes") || !strings.Contains(got, "1 scope") {
+		t.Errorf("workspace step does not show what each holds:\n%s", got)
+	}
+}
+
+// One workspace is not a choice.
+func TestWizardSkipsWorkspaceStepWhenThereIsOne(t *testing.T) {
+	w := NewWizard(
+		[]Space{{Name: "Only", Root: "/w/only"}},
+		[]Entry{{Root: "/w/only", Scope: "surfaces"}},
+		func(string, string) ([]string, error) { return nil, nil },
+		func(string) []string { return nil },
+	)
+
+	if w.step != stepName {
+		t.Errorf("step = %v, want the name step", w.step)
+	}
+	if w.Root() != "/w/only" {
+		t.Errorf("Root = %q, want the only workspace", w.Root())
+	}
+}
+
+func TestWizardNameStepShowsOnlyThatWorkspacesScopes(t *testing.T) {
+	w := pick(wizard(), "scopr")
+
+	got := w.View()
+	if !strings.Contains(got, "core") {
+		t.Errorf("name step missing that workspace's scope:\n%s", got)
+	}
+	if strings.Contains(got, "surfaces") {
+		t.Errorf("name step showed another workspace's scope:\n%s", got)
+	}
+	if !strings.Contains(got, "in scopr") {
+		t.Errorf("name step does not say which workspace:\n%s", got)
+	}
+}
+
+func TestWizardPickingAScopeLoadsIt(t *testing.T) {
+	w := type_(pick(wizard(), "scopr"), "core").Key("enter")
+
+	if w.Root() != "/w/scopr" {
+		t.Errorf("Root = %q, want /w/scopr", w.Root())
+	}
+	if want := []string{"cmd"}; !slices.Equal(w.scope.Chosen, want) {
 		t.Errorf("scope = %v, want %v", w.scope.Chosen, want)
 	}
 	if w.Name() != "" {
 		t.Errorf("Name = %q; an existing scope needs no saving", w.Name())
 	}
+	if w.Label() != "core" {
+		t.Errorf("Label = %q, want core", w.Label())
+	}
 }
 
-func TestWizardNewNameStartsEmptyAndSaves(t *testing.T) {
-	w := type_(wizard(), "checkout")
+// A blank name starts fresh rather than loading the first saved scope.
+func TestWizardUnnamedStartsFresh(t *testing.T) {
+	w := pick(wizard(), "scopr")
+
+	hits := w.matchesName()
+	last := hits[len(hits)-1]
+	for range len(hits) - 1 {
+		w = w.Key("down")
+	}
 	w = w.Key("enter")
 
-	if len(w.scope.Chosen) != 0 {
-		t.Errorf("scope = %v, want empty for a new name", w.scope.Chosen)
+	if last.Scope != "" {
+		t.Fatalf("last entry = %+v, want the unnamed one", last)
 	}
+	if len(w.scope.Chosen) != 0 {
+		t.Errorf("scope = %v, want empty", w.scope.Chosen)
+	}
+	if w.Name() != "" || w.Label() != "" {
+		t.Errorf("Name = %q, Label = %q, want both empty", w.Name(), w.Label())
+	}
+}
+
+func TestWizardNewNameSavesInThatWorkspace(t *testing.T) {
+	w := type_(pick(wizard(), "Goodlife"), "checkout").Key("enter")
+
 	if w.Name() != "checkout" {
 		t.Errorf("Name = %q, want checkout", w.Name())
 	}
-}
-
-func TestWizardBlankNameSavesNothing(t *testing.T) {
-	w := wizard().Key("enter")
-
-	if w.Name() != "" {
-		t.Errorf("Name = %q, want empty", w.Name())
+	if w.Root() != "/w/Goodlife" {
+		t.Errorf("Root = %q, want the chosen workspace", w.Root())
 	}
-	if w.step != stepScope {
-		t.Error("blank name did not continue to the scope step")
+	if len(w.scope.Chosen) != 0 {
+		t.Errorf("scope = %v, want empty for a new name", w.scope.Chosen)
 	}
 }
 
-// The name step says what will happen before you commit to it.
-func TestWizardNameStepExplainsItself(t *testing.T) {
-	blank := wizard().View()
-	if !strings.Contains(blank, "not saved") {
-		t.Errorf("blank name does not say it will not be saved:\n%s", blank)
-	}
-	if !strings.Contains(blank, "no tab label") {
-		t.Errorf("blank name does not say the tab goes unlabelled:\n%s", blank)
-	}
+// Escaping the name step goes back to the workspace, not out.
+func TestWizardNameEscapeGoesBackToWorkspace(t *testing.T) {
+	w := pick(wizard(), "scopr").Key("esc")
 
-	existing := type_(wizard(), "surfaces").View()
-	if !strings.Contains(existing, "loads @surfaces") {
-		t.Errorf("existing name does not say it loads:\n%s", existing)
+	if w.step != stepWorkspace {
+		t.Errorf("step = %v, want the workspace step", w.step)
 	}
-
-	fresh := type_(wizard(), "checkout").View()
-	if !strings.Contains(fresh, "saves as @checkout") {
-		t.Errorf("new name does not say it saves:\n%s", fresh)
+	if w.Cancelled {
+		t.Error("escape from the name step cancelled the wizard")
 	}
 }
 
-func TestWizardNameBackspace(t *testing.T) {
-	w := type_(wizard(), "surfaces")
-	w = w.Key("backspace")
+// With one workspace there is nowhere back to, so escape cancels.
+func TestWizardNameEscapeCancelsWithOneWorkspace(t *testing.T) {
+	w := NewWizard(
+		[]Space{{Name: "Only", Root: "/w/only"}},
+		nil,
+		func(string, string) ([]string, error) { return nil, nil },
+		func(string) []string { return nil },
+	)
 
-	if w.existing() {
-		t.Error("backspace left the name matching a saved scope")
+	if got := w.Key("esc"); !got.Cancelled {
+		t.Error("escape did not cancel when there was no workspace step")
+	}
+}
+
+func TestWizardCursorMoves(t *testing.T) {
+	w := pick(wizard(), "Goodlife").Key("down")
+
+	if w.nameAt != 1 {
+		t.Errorf("cursor = %d, want 1", w.nameAt)
+	}
+
+	w = w.Key("enter")
+	if w.Label() != "native" {
+		t.Errorf("Label = %q, want the second entry", w.Label())
+	}
+}
+
+// Typing reorders the list, so a held cursor would point somewhere else.
+func TestWizardCursorResetsOnTyping(t *testing.T) {
+	w := pick(wizard(), "Goodlife").Key("down").Key("s")
+
+	if w.nameAt != 0 {
+		t.Errorf("cursor = %d, want it reset", w.nameAt)
 	}
 }
 
 func TestWizardLoadFailureStaysOnName(t *testing.T) {
-	w := NewWizard([]string{"broken"}, []string{"apps/web"},
-		func(string) ([]string, error) { return nil, errors.New("scope file is a mess") })
+	broken := NewWizard(
+		[]Space{{Name: "W", Root: "/w"}},
+		[]Entry{{Root: "/w", Scope: "broken"}},
+		func(string, string) ([]string, error) { return nil, errors.New("scope file is a mess") },
+		func(string) []string { return nil },
+	)
 
-	w = type_(w, "broken").Key("enter")
+	w := type_(broken, "broken").Key("enter")
 
 	if w.step != stepName {
 		t.Error("a failed load advanced anyway")
@@ -124,7 +238,7 @@ func TestWizardLoadFailureStaysOnName(t *testing.T) {
 }
 
 func TestWizardWalksToPrompt(t *testing.T) {
-	w := type_(wizard(), "surfaces").Key("enter")
+	w := type_(pick(wizard(), "Goodlife"), "surfaces").Key("enter")
 	w = w.Key("enter") // accept the scope
 
 	if w.step != stepPrompt {
@@ -136,7 +250,7 @@ func TestWizardWalksToPrompt(t *testing.T) {
 }
 
 func TestWizardFinishesWithPrompt(t *testing.T) {
-	w := type_(wizard(), "surfaces").Key("enter")
+	w := type_(pick(wizard(), "Goodlife"), "surfaces").Key("enter")
 	w = w.Key("enter")
 	w = type_(w, "trace the checkout call").Key("enter")
 
@@ -152,7 +266,7 @@ func TestWizardFinishesWithPrompt(t *testing.T) {
 }
 
 func TestWizardFinishesWithoutPrompt(t *testing.T) {
-	w := type_(wizard(), "surfaces").Key("enter")
+	w := type_(pick(wizard(), "Goodlife"), "surfaces").Key("enter")
 	w = w.Key("enter").Key("enter")
 
 	if !w.Done() {
@@ -165,7 +279,7 @@ func TestWizardFinishesWithoutPrompt(t *testing.T) {
 
 // Escape goes back a step rather than out, so a mistyped name costs one key.
 func TestWizardEscapeGoesBack(t *testing.T) {
-	w := type_(wizard(), "surfaces").Key("enter")
+	w := type_(pick(wizard(), "Goodlife"), "surfaces").Key("enter")
 
 	w = w.Key("esc")
 	if w.step != stepName {
@@ -184,7 +298,7 @@ func TestWizardEscapeGoesBack(t *testing.T) {
 
 // Escaping back into the scope step must not immediately finish again.
 func TestWizardBackFromPromptCanEditAgain(t *testing.T) {
-	w := type_(wizard(), "surfaces").Key("enter")
+	w := type_(pick(wizard(), "Goodlife"), "surfaces").Key("enter")
 	w = w.Key("enter").Key("esc")
 
 	w = w.Key("x")
@@ -196,7 +310,7 @@ func TestWizardBackFromPromptCanEditAgain(t *testing.T) {
 	}
 }
 
-func TestWizardCancelsFromName(t *testing.T) {
+func TestWizardCancelsFromWorkspace(t *testing.T) {
 	w := wizard().Key("esc")
 
 	if !w.Cancelled || w.Done() {
@@ -205,7 +319,7 @@ func TestWizardCancelsFromName(t *testing.T) {
 }
 
 func TestWizardCancelsFromScope(t *testing.T) {
-	w := type_(wizard(), "surfaces").Key("enter").Key("q")
+	w := type_(pick(wizard(), "Goodlife"), "surfaces").Key("enter").Key("q")
 
 	if !w.Cancelled || w.Done() {
 		t.Error("quitting the scope step did not cancel the wizard")
@@ -214,7 +328,7 @@ func TestWizardCancelsFromScope(t *testing.T) {
 
 // An empty scope must not start a session, however it was reached.
 func TestWizardEmptyScopeCannotFinish(t *testing.T) {
-	w := type_(wizard(), "surfaces").Key("enter")
+	w := type_(pick(wizard(), "Goodlife"), "surfaces").Key("enter")
 	w = w.Key("x").Key("x").Key("enter")
 
 	if w.step == stepPrompt {
@@ -223,7 +337,7 @@ func TestWizardEmptyScopeCannotFinish(t *testing.T) {
 }
 
 func tagging() Wizard {
-	w := type_(wizard(), "surfaces").Key("enter").Key("enter")
+	w := type_(pick(wizard(), "Goodlife"), "surfaces").Key("enter").Key("enter")
 	w.Files = []files.File{
 		{Rel: "src/cart.ts", Base: "cart.ts"},
 		{Rel: "src/checkout.ts", Base: "checkout.ts"},
@@ -334,7 +448,7 @@ func TestTagWithNoMatchesInsertsNothing(t *testing.T) {
 
 // Files load in the background, so the list must say so rather than look empty.
 func TestTagSaysWhenStillLoading(t *testing.T) {
-	w := type_(wizard(), "surfaces").Key("enter").Key("enter").Key("@")
+	w := type_(pick(wizard(), "Goodlife"), "surfaces").Key("enter").Key("enter").Key("@")
 
 	if !strings.Contains(w.View(), "still reading") {
 		t.Errorf("tag list does not report loading:\n%s", w.View())
@@ -427,10 +541,10 @@ func TestTagViewMarksTheCursor(t *testing.T) {
 	}
 }
 
-// A name labels the terminal tab even when the scope is not saved, so Label
-// reports it where Name deliberately does not.
-func TestWizardLabelIsTheTypedName(t *testing.T) {
-	w := type_(wizard(), "surfaces")
+// A label is useful for the terminal tab even when nothing is saved, so Label
+// reports the chosen scope where Name deliberately does not.
+func TestWizardLabelIsTheChosenScope(t *testing.T) {
+	w := type_(pick(wizard(), "Goodlife"), "surfaces").Key("enter")
 
 	if w.Label() != "surfaces" {
 		t.Errorf("Label = %q, want surfaces", w.Label())
@@ -441,7 +555,98 @@ func TestWizardLabelIsTheTypedName(t *testing.T) {
 }
 
 func TestWizardLabelEmptyWhenUnnamed(t *testing.T) {
-	if got := wizard().Label(); got != "" {
-		t.Errorf("Label = %q, want empty", got)
+	w := pick(wizard(), "Goodlife")
+
+	// The unnamed entry is last, after the saved scopes.
+	for range len(w.matchesName()) - 1 {
+		w = w.Key("down")
+	}
+	w = w.Key("enter")
+
+	if got := w.Label(); got != "" {
+		t.Errorf("Label = %q, want empty for an unnamed session", got)
+	}
+}
+
+// A name scopefile.Save would reject must not be offered: the wizard would run
+// to the end and fail at the write.
+func TestWizardDoesNotOfferUnsaveableNames(t *testing.T) {
+	for _, bad := range []string{"../../escape", "a/b", ".hidden", ".."} {
+		w := type_(pick(wizard(), "Goodlife"), bad)
+
+		for _, e := range w.matchesName() {
+			if e.Scope == bad {
+				t.Errorf("%q was offered as a new scope", bad)
+			}
+		}
+	}
+}
+
+func TestWizardExplainsAnUnsaveableName(t *testing.T) {
+	w := type_(pick(wizard(), "Goodlife"), "../../escape")
+
+	got := w.View()
+	if !strings.Contains(got, "separator") {
+		t.Errorf("view does not say why the name is refused:\n%s", got)
+	}
+	if strings.Contains(got, "new") {
+		t.Errorf("view still offers to create it:\n%s", got)
+	}
+}
+
+// Enter on a refused name must not advance with nothing chosen.
+func TestWizardRefusedNameCannotContinue(t *testing.T) {
+	w := type_(pick(wizard(), "Goodlife"), "../../escape").Key("enter")
+
+	if w.step != stepName {
+		t.Errorf("step = %v, want to stay on the name step", w.step)
+	}
+	if w.Label() != "" {
+		t.Errorf("Label = %q, want no scope chosen", w.Label())
+	}
+}
+
+func TestWizardStillOffersValidNames(t *testing.T) {
+	w := type_(pick(wizard(), "Goodlife"), "checkout")
+
+	var found bool
+	for _, e := range w.matchesName() {
+		if e.Scope == "checkout" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("a valid new name was not offered")
+	}
+}
+
+// Scopes are written @name everywhere else, so the name step matches.
+func TestWizardNameStepShowsTheAtPrefix(t *testing.T) {
+	got := pick(wizard(), "Goodlife").View()
+
+	for _, want := range []string{"@surfaces", "@native"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("name step missing %q:\n%s", want, got)
+		}
+	}
+	if !strings.Contains(got, "(unnamed)") {
+		t.Errorf("the unnamed entry should not be prefixed:\n%s", got)
+	}
+}
+
+func TestWizardNameStepPrefixesWhatYouType(t *testing.T) {
+	got := type_(pick(wizard(), "Goodlife"), "checkout").View()
+
+	if !strings.Contains(got, "@checkout") {
+		t.Errorf("typed name is not shown as a scope:\n%s", got)
+	}
+}
+
+// The @ is decoration: it must not end up in the saved name.
+func TestWizardNameDoesNotIncludeThePrefix(t *testing.T) {
+	w := type_(pick(wizard(), "Goodlife"), "checkout").Key("enter")
+
+	if w.Name() != "checkout" {
+		t.Errorf("Name = %q, want checkout without the prefix", w.Name())
 	}
 }

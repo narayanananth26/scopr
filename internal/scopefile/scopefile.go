@@ -20,10 +20,10 @@ var (
 	ErrEmptyScope  = errors.New("scope names no repositories")
 )
 
-// validName rejects anything that would escape the scopes directory or hide
+// ValidName rejects anything that would escape the scopes directory or hide
 // from List. A name becomes a filename, so this is the only thing standing
 // between a scope name and an arbitrary write.
-func validName(name string) error {
+func ValidName(name string) error {
 	switch {
 	case name == "":
 		return fmt.Errorf("%w: empty", ErrInvalidName)
@@ -45,7 +45,7 @@ func Path(root, name string) string {
 // Load returns the repository names in a scope, in order. Comments and blank
 // lines are dropped; a scope naming nothing is an error.
 func Load(root, name string) ([]string, error) {
-	if err := validName(name); err != nil {
+	if err := ValidName(name); err != nil {
 		return nil, err
 	}
 
@@ -76,7 +76,7 @@ func Load(root, name string) ([]string, error) {
 // overwrite. The write is atomic, so a crash cannot leave a scope holding
 // fewer repos than it names.
 func Save(root, name string, repos []string) error {
-	if err := validName(name); err != nil {
+	if err := ValidName(name); err != nil {
 		return err
 	}
 	if len(repos) == 0 {
@@ -140,10 +140,10 @@ func List(root string) ([]string, error) {
 
 // Rename moves a scope. An existing target is an error, leaving both intact.
 func Rename(root, from, to string) error {
-	if err := validName(from); err != nil {
+	if err := ValidName(from); err != nil {
 		return err
 	}
-	if err := validName(to); err != nil {
+	if err := ValidName(to); err != nil {
 		return err
 	}
 
@@ -169,7 +169,7 @@ func Rename(root, from, to string) error {
 
 // Delete removes a saved scope.
 func Delete(root, name string) error {
-	if err := validName(name); err != nil {
+	if err := ValidName(name); err != nil {
 		return err
 	}
 

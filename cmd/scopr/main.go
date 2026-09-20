@@ -173,50 +173,29 @@ const surveyTimeout = 90 * time.Second
 // This is what bare scopr does. The name step is one Enter to skip, and it
 // buys a label and a prompt that a bare picker had nowhere to put.
 func runWizard(g globals) int {
-	root, err := findRoot(g)
+	spaces, entries, err := wizardEntries(g)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-
-	saved, err := scopefile.List(root)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	if len(spaces) == 0 {
+		fmt.Fprintln(os.Stderr, "no workspaces to start from; add one with: scopr workspace add")
 		return 1
 	}
 
-	available, err := picker.Names(root)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if len(available) == 0 {
-		fmt.Fprintln(os.Stderr, "no repositories in this workspace")
-		return 1
-	}
+	wiz := ui.NewWizard(spaces, entries,
+		func(root, name string) ([]string, error) { return scopefile.Load(root, name) },
+		func(root string) []string {
+			repos, err := picker.Names(root)
+			if err != nil {
+				return nil
+			}
+			return repos
+		},
+	)
 
-	load := func(name string) ([]string, error) { return scopefile.Load(root, name) }
-
-	wiz := ui.NewWizard(saved, available, load)
 	wiz.LoadFiles = func(names []string) []files.File {
-		s, err := scope.Resolve(root, names)
-		if err != nil {
-			return nil
-		}
-
-		paths := make([]string, 0, len(s.Repos))
-		for _, r := range s.Repos {
-			paths = append(paths, r.Path)
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-		defer cancel()
-
-		out, err := files.List(ctx, s.Primary().Path, paths)
-		if err != nil {
-			return nil
-		}
-		return out
+		return taggableFiles(wiz.Root(), names)
 	}
 
 	w, err := ui.RunWizard(wiz)
@@ -228,6 +207,7 @@ func runWizard(g globals) int {
 		return 1
 	}
 
+	root := w.Root()
 	repos := w.Repos()
 
 	// Save only after the scope is known to resolve, so a saved scope is one
@@ -245,7 +225,118 @@ func runWizard(g globals) int {
 	}
 
 	g.prompt = w.Prompt()
-	return runLaunch(g, repos, w.Label())
+	return launchIn(g, root, repos, w.Label())
+}
+
+// wizardEntries is the workspaces to choose between and the scopes they hold,
+// with the one you are standing in first.
+func wizardEntries(g globals) ([]ui.Space, []ui.Entry, error) {
+	var roots []string
+
+	if local, err := findRoot(g); err == nil {
+		roots = append(roots, local)
+	}
+
+	live, err := registry.Live()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	names := map[string]string{}
+	for _, w := range live {
+		names[w.Path] = w.Name
+		if !slices.Contains(roots, w.Path) {
+			roots = append(roots, w.Path)
+		}
+	}
+
+	var (
+		spaces  []ui.Space
+		entries []ui.Entry
+	)
+
+	for _, root := range roots {
+		name, ok := names[root]
+		if !ok {
+			name = filepath.Base(root)
+		}
+		spaces = append(spaces, ui.Space{Name: name, Root: root})
+
+		scopes, err := scopefile.List(root)
+		if err != nil {
+			continue
+		}
+		for _, sc := range scopes {
+			repos, err := scopefile.Load(root, sc)
+			if err != nil {
+				continue
+			}
+			entries = append(entries, ui.Entry{Root: root, Scope: sc, Repos: repos})
+		}
+	}
+	return spaces, entries, nil
+}
+
+// taggableFiles reads the files a scope can tag, for the prompt step.
+func taggableFiles(root string, names []string) []files.File {
+	s, err := scope.Resolve(root, names)
+	if err != nil {
+		return nil
+	}
+
+	paths := make([]string, 0, len(s.Repos))
+	for _, r := range s.Repos {
+		paths = append(paths, r.Path)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	out, err := files.List(ctx, s.Primary().Path, paths)
+	if err != nil {
+		return nil
+	}
+	return out
+}
+
+// launchIn starts a session in an already-resolved workspace.
+func launchIn(g globals, root string, args []string, name string) int {
+	s, err := scope.ResolveArgs(root, args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	code, err := launch.Run(launch.Config{Scope: s, Prompt: g.prompt, Name: name})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return code
+}
+
+// launchRoot picks the workspace to launch in. The first @name among the
+// arguments locates it; otherwise the usual resolution applies.
+func launchRoot(g globals, args []string) (string, error) {
+	for _, a := range args {
+		if name, ok := strings.CutPrefix(a, scope.Prefix); ok {
+			return findScopeRoot(g, name)
+		}
+	}
+	return findRoot(g)
+}
+
+// runLaunch resolves names to a scope and starts a session in the primary
+// repo, returning claude's exit code.
+func runLaunch(g globals, args []string, name string) int {
+	// A named scope says which workspace to use, so scopr @surfaces works
+	// from anywhere. Plain repository names do not, and resolve as usual.
+	root, err := launchRoot(g, args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return launchIn(g, root, args, name)
 }
 
 // runInfer surveys the workspace for a task, shows what it found, and starts a
@@ -282,9 +373,9 @@ func runInfer(g globals, task string) int {
 
 	case err == nil:
 		scoped.Notes = make(map[string]string, len(suggestions))
-		for _, s := range suggestions {
-			scoped.Names = append(scoped.Names, s.Name)
-			scoped.Notes[s.Name] = s.Reason
+		for _, sg := range suggestions {
+			scoped.Names = append(scoped.Names, sg.Name)
+			scoped.Notes[sg.Name] = sg.Reason
 		}
 
 	case errors.Is(err, dispatch.ErrDeclined):
@@ -305,37 +396,10 @@ func runInfer(g globals, task string) int {
 		return 1
 	}
 
-	prompt := g.prompt
-	if prompt == "" {
-		prompt = task
+	if g.prompt == "" {
+		g.prompt = task
 	}
-	g.prompt = prompt
-	return runLaunch(g, args, task)
-}
-
-// runLaunch resolves names to a scope and starts a session in the primary
-// repo, returning claude's exit code.
-func runLaunch(g globals, args []string, name string) int {
-	// A named scope says which workspace to use, so scopr @surfaces works
-	// from anywhere. Plain repository names do not, and resolve as usual.
-	root, err := launchRoot(g, args)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-
-	s, err := scope.ResolveArgs(root, args)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-
-	code, err := launch.Run(launch.Config{Scope: s, Prompt: g.prompt, Name: name})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return code
+	return launchIn(g, root, args, task)
 }
 
 // label names a session from its arguments: a saved scope names itself, a
@@ -346,10 +410,6 @@ func label(args []string) string {
 	}
 	return ""
 }
-
-// verbs are reserved: a repository sharing one of these names must be given
-// as a path, such as frontend/list.
-var verbs = []string{"infer", "save", "list", "rename", "delete", "where", "workspace"}
 
 // runWorkspace handles the workspace verbs.
 func runWorkspace(args []string) int {
@@ -432,6 +492,13 @@ func runWorkspaceRemove(query string) int {
 
 	// A stale entry cannot be looked up, so fall back to removing by path.
 	if err != nil {
+		abs, absErr := filepath.Abs(query)
+		if absErr == nil {
+			if rmErr := registry.Remove(abs); rmErr == nil {
+				fmt.Fprintf(os.Stderr, "forgot %s\n", abs)
+				return 0
+			}
+		}
 		if rmErr := registry.Remove(query); rmErr == nil {
 			fmt.Fprintf(os.Stderr, "forgot %s\n", query)
 			return 0
@@ -456,16 +523,9 @@ func runWorkspaceRemove(query string) int {
 	return 0
 }
 
-// launchRoot picks the workspace to launch in. The first @name among the
-// arguments locates it; otherwise the usual resolution applies.
-func launchRoot(g globals, args []string) (string, error) {
-	for _, a := range args {
-		if name, ok := strings.CutPrefix(a, scope.Prefix); ok {
-			return findScopeRoot(g, name)
-		}
-	}
-	return findRoot(g)
-}
+// verbs are reserved: a repository sharing one of these names must be given
+// as a path, such as frontend/list.
+var verbs = []string{"infer", "save", "list", "rename", "delete", "where", "workspace"}
 
 func usage() {
 	fmt.Fprint(os.Stderr, `scopr launches Claude Code scoped to chosen repositories.
