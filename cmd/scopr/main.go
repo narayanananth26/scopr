@@ -17,33 +17,50 @@ import (
 	"scopr/internal/launch"
 	"scopr/internal/picker"
 	"scopr/internal/registry"
+	"scopr/internal/resolve"
 	"scopr/internal/scope"
 	"scopr/internal/scopefile"
 	"scopr/internal/ui"
-	"scopr/internal/workspace"
 )
 
-// findRoot locates the workspace, reporting a missing one as advice rather
-// than as a stat error.
-func findRoot() (string, error) {
+// findRoot returns the workspace a command should act on: --workspace, then
+// the one it was run in, then the only registered one.
+func findRoot(g globals) (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("couldn't resolve current working directory: %w", err)
+	}
+	return resolve.One(resolve.Options{Workspace: g.workspace, Cwd: cwd})
+}
+
+// findScopeRoot returns the workspace holding a named scope. Standing in a
+// workspace that has it wins; otherwise every registered one is searched, and
+// more than one hit is reported rather than guessed between.
+func findScopeRoot(g globals, name string) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("couldn't resolve current working directory: %w", err)
 	}
 
-	root, err := workspace.Find(cwd)
-	if errors.Is(err, workspace.ErrNotFound) {
-		return "", errors.New("not inside a .scopr workspace; run this command from within a workspace")
-	}
+	hits, err := resolve.Scope(resolve.Options{Workspace: g.workspace, Cwd: cwd}, name)
 	if err != nil {
 		return "", err
 	}
-	return root, nil
+	if len(hits) > 1 {
+		var b strings.Builder
+		fmt.Fprintf(&b, "%s%s is in more than one workspace:", scope.Prefix, name)
+		for _, h := range hits {
+			fmt.Fprintf(&b, "\n  %s  %s", h.Workspace.Name, h.Workspace.Path)
+		}
+		b.WriteString("\nname one with --workspace")
+		return "", errors.New(b.String())
+	}
+	return hits[0].Workspace.Path, nil
 }
 
 // runWhere prints the workspace root. The path goes to stdout alone.
-func runWhere() int {
-	root, err := findRoot()
+func runWhere(g globals) int {
+	root, err := findRoot(g)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -53,8 +70,8 @@ func runWhere() int {
 	return 0
 }
 
-func runList() int {
-	root, err := findRoot()
+func runList(g globals) int {
+	root, err := findRoot(g)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -83,8 +100,8 @@ func runList() int {
 
 // runSave stores a scope after checking every repository resolves, so a saved
 // scope is one that can actually launch.
-func runSave(name string, args []string) int {
-	root, err := findRoot()
+func runSave(g globals, name string, args []string) int {
+	root, err := findRoot(g)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -104,8 +121,8 @@ func runSave(name string, args []string) int {
 	return 0
 }
 
-func runDelete(name string) int {
-	root, err := findRoot()
+func runDelete(g globals, name string) int {
+	root, err := findRoot(g)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -122,13 +139,13 @@ func runDelete(name string) int {
 	return 0
 }
 
-func runRename(args []string) int {
+func runRename(g globals, args []string) int {
 	if len(args) != 2 {
 		fmt.Fprintln(os.Stderr, "usage: scopr --rename <old> <new>")
 		return 1
 	}
 
-	root, err := findRoot()
+	root, err := findRoot(g)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -155,8 +172,8 @@ const surveyTimeout = 90 * time.Second
 //
 // This is what bare scopr does. The name step is one Enter to skip, and it
 // buys a label and a prompt that a bare picker had nowhere to put.
-func runWizard() int {
-	root, err := findRoot()
+func runWizard(g globals) int {
+	root, err := findRoot(g)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -227,13 +244,14 @@ func runWizard() int {
 		fmt.Fprintf(os.Stderr, "saved %s%s\n", scope.Prefix, name)
 	}
 
-	return runLaunch(repos, w.Prompt(), w.Label())
+	g.prompt = w.Prompt()
+	return runLaunch(g, repos, w.Label())
 }
 
 // runInfer surveys the workspace for a task, shows what it found, and starts a
 // session once approved.
-func runInfer(task, prompt string, verbose bool) int {
-	root, err := findRoot()
+func runInfer(g globals, task string) int {
+	root, err := findRoot(g)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -248,7 +266,7 @@ func runInfer(task, prompt string, verbose bool) int {
 	)
 
 	err = ui.RunSurvey(ctx, task, func(ctx context.Context, trace io.Writer) error {
-		if verbose {
+		if g.verbose {
 			cfg.Trace = trace
 		}
 		var err error
@@ -287,16 +305,20 @@ func runInfer(task, prompt string, verbose bool) int {
 		return 1
 	}
 
+	prompt := g.prompt
 	if prompt == "" {
 		prompt = task
 	}
-	return runLaunch(args, prompt, task)
+	g.prompt = prompt
+	return runLaunch(g, args, task)
 }
 
 // runLaunch resolves names to a scope and starts a session in the primary
 // repo, returning claude's exit code.
-func runLaunch(args []string, prompt, name string) int {
-	root, err := findRoot()
+func runLaunch(g globals, args []string, name string) int {
+	// A named scope says which workspace to use, so scopr @surfaces works
+	// from anywhere. Plain repository names do not, and resolve as usual.
+	root, err := launchRoot(g, args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -308,7 +330,7 @@ func runLaunch(args []string, prompt, name string) int {
 		return 1
 	}
 
-	code, err := launch.Run(launch.Config{Scope: s, Prompt: prompt, Name: name})
+	code, err := launch.Run(launch.Config{Scope: s, Prompt: g.prompt, Name: name})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -434,6 +456,17 @@ func runWorkspaceRemove(query string) int {
 	return 0
 }
 
+// launchRoot picks the workspace to launch in. The first @name among the
+// arguments locates it; otherwise the usual resolution applies.
+func launchRoot(g globals, args []string) (string, error) {
+	for _, a := range args {
+		if name, ok := strings.CutPrefix(a, scope.Prefix); ok {
+			return findScopeRoot(g, name)
+		}
+	}
+	return findRoot(g)
+}
+
 func usage() {
 	fmt.Fprint(os.Stderr, `scopr launches Claude Code scoped to chosen repositories.
 
@@ -518,7 +551,7 @@ func run(argv []string) int {
 	}
 
 	if len(args) == 0 {
-		return runWizard()
+		return runWizard(g)
 	}
 
 	verb := args[0]
@@ -530,7 +563,7 @@ func run(argv []string) int {
 		if err != nil {
 			return 2
 		}
-		return runLaunch(names, g.prompt, label(names))
+		return runLaunch(g, names, label(names))
 	}
 
 	rest, err := verbFlags(verb, args[1:], &g)
@@ -540,40 +573,40 @@ func run(argv []string) int {
 
 	switch verb {
 	case "where":
-		return runWhere()
+		return runWhere(g)
 
 	case "list":
-		return runList()
+		return runList(g)
 
 	case "rename":
-		return runRename(rest)
+		return runRename(g, rest)
 
 	case "delete":
 		if len(rest) != 1 {
 			fmt.Fprintln(os.Stderr, "usage: scopr delete <name>")
 			return 1
 		}
-		return runDelete(rest[0])
+		return runDelete(g, rest[0])
 
 	case "infer":
 		if len(rest) == 0 {
 			fmt.Fprintln(os.Stderr, "usage: scopr infer <task>")
 			return 1
 		}
-		return runInfer(strings.Join(rest, " "), g.prompt, g.verbose)
+		return runInfer(g, strings.Join(rest, " "))
 
 	case "save":
 		if len(rest) < 2 {
 			fmt.Fprintln(os.Stderr, "usage: scopr save <name> <repo>...")
 			return 1
 		}
-		return runSave(strings.TrimPrefix(rest[0], scope.Prefix), rest[1:])
+		return runSave(g, strings.TrimPrefix(rest[0], scope.Prefix), rest[1:])
 
 	case "workspace":
 		return runWorkspace(rest)
 	}
 
-	return runLaunch(args, g.prompt, label(args))
+	return runLaunch(g, args, label(args))
 }
 
 func main() { os.Exit(run(os.Args[1:])) }
