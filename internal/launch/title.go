@@ -8,19 +8,10 @@ import (
 	"scopr/internal/scope"
 )
 
-// titleLimit keeps a tab label readable. A tab bar shows a couple of dozen
-// characters before truncating on its own terms.
-const titleLimit = 40
-
-// envTitleLimit is shorter than a tab label. A status line already carries the
-// directory, branch, model and clock, so the title competes for room there in
-// a way a tab title does not.
-const envTitleLimit = 28
-
-// ShortTitle is Title cut for a status line.
-func ShortTitle(name, prompt string, s scope.Scope) string {
-	return truncate(Title(name, prompt, s), envTitleLimit)
-}
+// titleLimit is set by the tighter of the two places a label appears. A status
+// line already carries the directory, branch, model and clock, and a tmux
+// window name sits beside every other window, so neither has room for more.
+const titleLimit = 28
 
 // Title labels the session in the terminal tab.
 //
