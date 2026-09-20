@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"scopr/internal/cli"
 	"scopr/internal/dispatch"
 	"scopr/internal/files"
 	"scopr/internal/launch"
@@ -23,21 +24,25 @@ import (
 	"scopr/internal/ui"
 )
 
-func findRoot(g globals) (string, error) {
+var version = "dev"
+
+const surveyTimeout = 90 * time.Second
+
+func findRoot(a cli.Args) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("couldn't resolve current working directory: %w", err)
 	}
-	return resolve.One(resolve.Options{Workspace: g.workspace, Cwd: cwd})
+	return resolve.One(resolve.Options{Workspace: a.Str("workspace"), Cwd: cwd})
 }
 
-func findScopeRoot(g globals, name string) (string, error) {
+func findScopeRoot(a cli.Args, name string) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("couldn't resolve current working directory: %w", err)
 	}
 
-	hits, err := resolve.Scope(resolve.Options{Workspace: g.workspace, Cwd: cwd}, name)
+	hits, err := resolve.Scope(resolve.Options{Workspace: a.Str("workspace"), Cwd: cwd}, name)
 	if err != nil {
 		return "", err
 	}
@@ -53,19 +58,35 @@ func findScopeRoot(g globals, name string) (string, error) {
 	return hits[0].Workspace.Path, nil
 }
 
-func runWhere(g globals) int {
-	root, err := findRoot(g)
+func emit(v any) int {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
+func runWhere(a cli.Args) int {
+	root, err := findRoot(a)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
+	}
+
+	if a.Bool("json") {
+		return emit(struct {
+			Root string `json:"root"`
+		}{root})
 	}
 
 	fmt.Fprintln(os.Stdout, root)
 	return 0
 }
 
-func runList(g globals) int {
-	root, err := findRoot(g)
+func runList(a cli.Args) int {
+	root, err := findRoot(a)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -76,51 +97,97 @@ func runList(g globals) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	if len(names) == 0 {
-		fmt.Fprintln(os.Stderr, "no saved scopes; create one with: scopr save <name> <repo>...")
-		return 0
+
+	type entry struct {
+		Name  string   `json:"name"`
+		Repos []string `json:"repos"`
 	}
 
+	entries := make([]entry, 0, len(names))
 	for _, name := range names {
 		repos, err := scopefile.Load(root, name)
 		if err != nil {
-			fmt.Fprintf(os.Stdout, "%s%s\n", scope.Prefix, name)
-			continue
+			fmt.Fprintln(os.Stderr, err)
+			return 1
 		}
-		fmt.Fprintf(os.Stdout, "%s%-16s %s\n", scope.Prefix, name, strings.Join(repos, " "))
+		entries = append(entries, entry{name, repos})
+	}
+
+	if a.Bool("json") {
+		return emit(entries)
+	}
+
+	if len(entries) == 0 {
+		fmt.Fprintln(os.Stderr, "no saved scopes; create one with: scopr save @name <repo>...")
+		return 0
+	}
+
+	width := 0
+	for _, e := range entries {
+		width = max(width, len(e.Name))
+	}
+
+	for _, e := range entries {
+		fmt.Fprintf(os.Stdout, "%s%-*s  %s\n", scope.Prefix, width, e.Name, strings.Join(e.Repos, " "))
 	}
 	return 0
 }
 
-func runSave(g globals, name string, args []string) int {
-	root, err := findRoot(g)
+func runShow(a cli.Args) int {
+	root, err := findRoot(a)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 
-	if _, err := scope.ResolveArgs(root, args); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-
-	if err := scopefile.Save(root, name, args); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-
-	fmt.Fprintf(os.Stderr, "saved %s%s: %s\n", scope.Prefix, name, strings.Join(args, " "))
-	return 0
-}
-
-func runDelete(g globals, name string) int {
-	root, err := findRoot(g)
+	repos, err := scopefile.Load(root, strings.TrimPrefix(a.Operands[0], scope.Prefix))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 
-	name = strings.TrimPrefix(name, scope.Prefix)
+	if a.Bool("json") {
+		return emit(repos)
+	}
+
+	for _, r := range repos {
+		fmt.Fprintln(os.Stdout, r)
+	}
+	return 0
+}
+
+func runSave(a cli.Args) int {
+	root, err := findRoot(a)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	name := strings.TrimPrefix(a.Operands[0], scope.Prefix)
+	repos := a.Operands[1:]
+
+	if _, err := scope.ResolveArgs(root, repos); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	if err := scopefile.Save(root, name, repos); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	fmt.Fprintf(os.Stderr, "saved %s%s: %s\n", scope.Prefix, name, strings.Join(repos, " "))
+	return 0
+}
+
+func runDelete(a cli.Args) int {
+	root, err := findRoot(a)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	name := strings.TrimPrefix(a.Operands[0], scope.Prefix)
 
 	if err := scopefile.Delete(root, name); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -131,20 +198,15 @@ func runDelete(g globals, name string) int {
 	return 0
 }
 
-func runRename(g globals, args []string) int {
-	if len(args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: scopr --rename <old> <new>")
-		return 1
-	}
-
-	root, err := findRoot(g)
+func runRename(a cli.Args) int {
+	root, err := findRoot(a)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 
-	from := strings.TrimPrefix(args[0], scope.Prefix)
-	to := strings.TrimPrefix(args[1], scope.Prefix)
+	from := strings.TrimPrefix(a.Operands[0], scope.Prefix)
+	to := strings.TrimPrefix(a.Operands[1], scope.Prefix)
 
 	if err := scopefile.Rename(root, from, to); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -155,10 +217,8 @@ func runRename(g globals, args []string) int {
 	return 0
 }
 
-const surveyTimeout = 90 * time.Second
-
-func runWizard(g globals) int {
-	spaces, entries, err := wizardEntries(g)
+func runWizard(a cli.Args) int {
+	spaces, entries, err := wizardEntries(a)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -205,14 +265,18 @@ func runWizard(g globals) int {
 		fmt.Fprintf(os.Stderr, "saved %s%s\n", scope.Prefix, name)
 	}
 
-	g.prompt = w.Prompt()
-	return launchIn(g, root, repos, w.Label())
+	prompt := a.Str("prompt")
+	if p := w.Prompt(); p != "" {
+		prompt = p
+	}
+
+	return launchIn(root, repos, label(a, repos, w.Label()), prompt)
 }
 
-func wizardEntries(g globals) ([]ui.Space, []ui.Entry, error) {
+func wizardEntries(a cli.Args) ([]ui.Space, []ui.Entry, error) {
 	var roots []string
 
-	if local, err := findRoot(g); err == nil {
+	if local, err := findRoot(a); err == nil {
 		roots = append(roots, local)
 	}
 
@@ -277,14 +341,14 @@ func taggableFiles(root string, names []string) []files.File {
 	return out
 }
 
-func launchIn(g globals, root string, args []string, name string) int {
-	s, err := scope.ResolveArgs(root, args)
+func launchIn(root string, repos []string, name, prompt string) int {
+	s, err := scope.ResolveArgs(root, repos)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 
-	code, err := launch.Run(launch.Config{Scope: s, Prompt: g.prompt, Name: name})
+	code, err := launch.Run(launch.Config{Scope: s, Prompt: prompt, Name: name})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -292,26 +356,38 @@ func launchIn(g globals, root string, args []string, name string) int {
 	return code
 }
 
-func launchRoot(g globals, args []string) (string, error) {
-	for _, a := range args {
-		if name, ok := strings.CutPrefix(a, scope.Prefix); ok {
-			return findScopeRoot(g, name)
+func launchRoot(a cli.Args) (string, error) {
+	for _, o := range a.Operands {
+		if name, ok := strings.CutPrefix(o, scope.Prefix); ok {
+			return findScopeRoot(a, name)
 		}
 	}
-	return findRoot(g)
+	return findRoot(a)
 }
 
-func runLaunch(g globals, args []string, name string) int {
-	root, err := launchRoot(g, args)
+func label(a cli.Args, repos []string, fallback string) string {
+	if l := a.Str("label"); l != "" {
+		return l
+	}
+	if len(repos) == 1 && strings.HasPrefix(repos[0], scope.Prefix) {
+		return strings.TrimPrefix(repos[0], scope.Prefix)
+	}
+	return fallback
+}
+
+func runLaunch(a cli.Args) int {
+	root, err := launchRoot(a)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	return launchIn(g, root, args, name)
+	return launchIn(root, a.Operands, label(a, a.Operands, ""), a.Str("prompt"))
 }
 
-func runInfer(g globals, task string) int {
-	root, err := findRoot(g)
+func runInfer(a cli.Args) int {
+	task := a.Operands[0]
+
+	root, err := findRoot(a)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -326,7 +402,7 @@ func runInfer(g globals, task string) int {
 	)
 
 	err = ui.RunSurvey(ctx, task, func(ctx context.Context, trace io.Writer) error {
-		if g.verbose {
+		if a.Bool("verbose") {
 			cfg.Trace = trace
 		}
 		var err error
@@ -348,7 +424,6 @@ func runInfer(g globals, task string) int {
 		}
 
 	case errors.Is(err, dispatch.ErrDeclined):
-
 		scoped.Header = "nothing suggested - " + err.Error()
 
 	default:
@@ -356,7 +431,7 @@ func runInfer(g globals, task string) int {
 		return 1
 	}
 
-	args, err := picker.Edit(root, scoped)
+	repos, err := picker.Edit(root, scoped)
 	if errors.Is(err, picker.ErrCancelled) {
 		return 0
 	}
@@ -365,50 +440,20 @@ func runInfer(g globals, task string) int {
 		return 1
 	}
 
-	if g.prompt == "" {
-		g.prompt = task
+	prompt := a.Str("prompt")
+	if prompt == "" {
+		prompt = task
 	}
-	return launchIn(g, root, args, task)
+
+	return launchIn(root, repos, label(a, repos, task), prompt)
 }
 
-func label(args []string) string {
-	if len(args) == 1 && strings.HasPrefix(args[0], scope.Prefix) {
-		return strings.TrimPrefix(args[0], scope.Prefix)
-	}
-	return ""
-}
-
-func runWorkspace(args []string) int {
-	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: scopr workspace add|list|remove")
-		return 1
+func runWorkspaceAdd(a cli.Args) int {
+	path := "."
+	if len(a.Operands) > 0 {
+		path = a.Operands[0]
 	}
 
-	switch args[0] {
-	case "add":
-		path := "."
-		if len(args) > 1 {
-			path = args[1]
-		}
-		return runWorkspaceAdd(path)
-
-	case "list":
-		return runWorkspaceList()
-
-	case "remove":
-		if len(args) != 2 {
-			fmt.Fprintln(os.Stderr, "usage: scopr workspace remove <name>")
-			return 1
-		}
-		return runWorkspaceRemove(args[1])
-
-	default:
-		fmt.Fprintf(os.Stderr, "unknown workspace command %q; want add, list or remove\n", args[0])
-		return 1
-	}
-}
-
-func runWorkspaceAdd(path string) int {
 	if err := registry.Add(path); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -420,16 +465,30 @@ func runWorkspaceAdd(path string) int {
 			abs = resolved
 		}
 	}
-	fmt.Fprintf(os.Stderr, "registered %s\n", abs)
+	fmt.Fprintf(os.Stderr, "added %s\n", abs)
 	return 0
 }
 
-func runWorkspaceList() int {
+func runWorkspaceList(a cli.Args) int {
 	all, err := registry.List()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+
+	if a.Bool("json") {
+		type entry struct {
+			Name  string `json:"name"`
+			Path  string `json:"path"`
+			Stale bool   `json:"stale"`
+		}
+		entries := make([]entry, 0, len(all))
+		for _, w := range all {
+			entries = append(entries, entry{w.Name, w.Path, w.Stale})
+		}
+		return emit(entries)
+	}
+
 	if len(all) == 0 {
 		fmt.Fprintln(os.Stderr, "no workspaces registered; add one with: scopr workspace add")
 		return 0
@@ -450,19 +509,20 @@ func runWorkspaceList() int {
 	return 0
 }
 
-func runWorkspaceRemove(query string) int {
-	matches, err := registry.Lookup(query)
+func runWorkspaceRemove(a cli.Args) int {
+	query := a.Operands[0]
 
+	matches, err := registry.Lookup(query)
 	if err != nil {
 		abs, absErr := filepath.Abs(query)
 		if absErr == nil {
 			if rmErr := registry.Remove(abs); rmErr == nil {
-				fmt.Fprintf(os.Stderr, "forgot %s\n", abs)
+				fmt.Fprintf(os.Stderr, "removed %s\n", abs)
 				return 0
 			}
 		}
 		if rmErr := registry.Remove(query); rmErr == nil {
-			fmt.Fprintf(os.Stderr, "forgot %s\n", query)
+			fmt.Fprintf(os.Stderr, "removed %s\n", query)
 			return 0
 		}
 		fmt.Fprintln(os.Stderr, err)
@@ -474,150 +534,182 @@ func runWorkspaceRemove(query string) int {
 		for _, w := range matches {
 			fmt.Fprintf(os.Stderr, "  %s\n", w.Path)
 		}
-		return 1
+		return 2
 	}
 
 	if err := registry.Remove(matches[0].Path); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	fmt.Fprintf(os.Stderr, "forgot %s\n", matches[0].Path)
+	fmt.Fprintf(os.Stderr, "removed %s\n", matches[0].Path)
 	return 0
 }
 
-var verbs = []string{"infer", "save", "list", "rename", "delete", "where", "workspace"}
+func line(path []string, c *cli.Command) string {
+	parts := append([]string{"scopr"}, path...)
+	if c.Use != "" {
+		parts = append(parts, c.Use)
+	}
+	return strings.Join(parts, " ")
+}
 
-func usage() {
-	fmt.Fprint(os.Stderr, `scopr launches Claude Code scoped to chosen repositories.
+func lines(path []string, c *cli.Command, out *[][2]string) {
+	if c.Help != "" {
+		*out = append(*out, [2]string{line(path, c), c.Help})
+	}
+	for _, k := range c.Children {
+		lines(slices.Concat(path, []string{k.Name}), k, out)
+	}
+}
 
-usage:
-  scopr                             name, scope and prompt, step by step
-  scopr [flags] <repo|@scope>...    start a session; the first repo becomes the working directory
+func flagLine(f cli.Flag) string {
+	var b strings.Builder
 
-  scopr infer <task>                suggest a scope for the task, then start
-  scopr save <name> <repo>...       save a scope under that name
-  scopr list                        list saved scopes
-  scopr rename <old> <new>          rename a saved scope
-  scopr delete <name>               delete a saved scope
-  scopr where                       print the workspace root
+	if f.Short != "" {
+		fmt.Fprintf(&b, "-%s, ", f.Short)
+	} else {
+		b.WriteString("    ")
+	}
+	fmt.Fprintf(&b, "--%s", f.Name)
+	if f.Arg != "" {
+		fmt.Fprintf(&b, " %s", f.Arg)
+	}
+	return b.String()
+}
 
-  scopr workspace add [path]        register a workspace
-  scopr workspace list              list registered workspaces
-  scopr workspace remove <name>     forget a workspace
+func usage(path []string, c *cli.Command) {
+	var rows [][2]string
+	lines(path, c, &rows)
 
-flags, before the verb:
-  --workspace <name>                which workspace to resolve against
-  -p <text>                         prompt to submit on start
-  --verbose                         with infer, show the survey's tool calls
+	width := 0
+	for _, r := range rows {
+		width = max(width, len(r[0]))
+	}
+
+	w := os.Stderr
+	root := c == cli.Commands
+
+	if root {
+		fmt.Fprint(w, "scopr launches Claude Code scoped to chosen repositories.\n\nusage:\n")
+		fmt.Fprintf(w, "  %-*s  %s\n", width, "scopr", "name, scope and prompt, step by step")
+	} else {
+		fmt.Fprint(w, "usage:\n")
+	}
+
+	for _, r := range rows {
+		fmt.Fprintf(w, "  %-*s  %s\n", width, r[0], r[1])
+	}
+
+	fmt.Fprint(w, "\nflags:\n")
+	for f := range cli.Flags.All() {
+		if !root && !accepts(c, f.Name) {
+			continue
+		}
+		fmt.Fprintf(w, "  %-20s  %s\n", flagLine(f), f.Help)
+	}
+
+	if root {
+		fmt.Fprint(w, `
+Flags may appear anywhere, and -- ends them so a repository whose name begins
+with a dash can still be named. A word that is also a command reaches its
+repository through scopr run.
 
 An @name argument expands to the repositories that scope names, so scopes and
 plain repositories can be mixed.
 `)
-}
-
-type globals struct {
-	workspace string
-	prompt    string
-	verbose   bool
-}
-
-func parseGlobals(argv []string) (globals, []string, error) {
-	fs := flag.NewFlagSet("scopr", flag.ContinueOnError)
-	fs.Usage = usage
-
-	var g globals
-	fs.StringVar(&g.workspace, "workspace", "", "which workspace to resolve against")
-	fs.StringVar(&g.prompt, "p", "", "prompt to submit on start")
-	fs.BoolVar(&g.verbose, "verbose", false, "show the survey's tool calls")
-
-	if err := fs.Parse(argv); err != nil {
-		return g, nil, err
 	}
-	return g, fs.Args(), nil
 }
 
-func verbFlags(name string, args []string, g *globals) ([]string, error) {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.Usage = usage
-	fs.StringVar(&g.prompt, "p", g.prompt, "prompt to submit on start")
-	fs.BoolVar(&g.verbose, "verbose", g.verbose, "show the survey's tool calls")
+func accepts(c *cli.Command, name string) bool {
+	if name == "help" {
+		return true
+	}
+	return slices.ContainsFunc(c.Accepts, func(f *cli.Flag) bool { return f.Name == name })
+}
 
-	var positional, flags []string
-	for i, a := range args {
-		if strings.HasPrefix(a, "-") {
-			flags = args[i:]
-			break
+func runHelp(a cli.Args) int {
+	if len(a.Operands) == 0 {
+		usage(nil, cli.Commands)
+		return 0
+	}
+
+	for _, c := range cli.Commands.Children {
+		if c.Name == a.Operands[0] {
+			usage([]string{c.Name}, c)
+			return 0
 		}
-		positional = append(positional, a)
 	}
 
-	if err := fs.Parse(flags); err != nil {
-		return nil, err
+	fmt.Fprintf(os.Stderr, "unknown command %q\n", a.Operands[0])
+	return 2
+}
+
+func dispatchArgs(a cli.Args) int {
+	switch strings.Join(a.Path, " ") {
+	case "":
+		if len(a.Operands) == 0 {
+			return runWizard(a)
+		}
+		return runLaunch(a)
+
+	case "run":
+		return runLaunch(a)
+
+	case "infer":
+		return runInfer(a)
+
+	case "list":
+		return runList(a)
+
+	case "show":
+		return runShow(a)
+
+	case "save":
+		return runSave(a)
+
+	case "delete":
+		return runDelete(a)
+
+	case "rename":
+		return runRename(a)
+
+	case "where":
+		return runWhere(a)
+
+	case "workspace list":
+		return runWorkspaceList(a)
+
+	case "workspace add":
+		return runWorkspaceAdd(a)
+
+	case "workspace remove":
+		return runWorkspaceRemove(a)
+
+	case "help":
+		return runHelp(a)
+
+	case "version":
+		fmt.Fprintln(os.Stdout, version)
+		return 0
 	}
-	return append(positional, fs.Args()...), nil
+
+	usage(nil, cli.Commands)
+	return 2
 }
 
 func run(argv []string) int {
-	g, args, err := parseGlobals(argv)
+	a, err := cli.Parse(argv)
 	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
 
-	if len(args) == 0 {
-		return runWizard(g)
+	if a.Help {
+		usage(a.Path, a.Command)
+		return 0
 	}
 
-	verb := args[0]
-
-	if !slices.Contains(verbs, verb) {
-		names, err := verbFlags("scopr", args, &g)
-		if err != nil {
-			return 2
-		}
-		return runLaunch(g, names, label(names))
-	}
-
-	rest, err := verbFlags(verb, args[1:], &g)
-	if err != nil {
-		return 2
-	}
-
-	switch verb {
-	case "where":
-		return runWhere(g)
-
-	case "list":
-		return runList(g)
-
-	case "rename":
-		return runRename(g, rest)
-
-	case "delete":
-		if len(rest) != 1 {
-			fmt.Fprintln(os.Stderr, "usage: scopr delete <name>")
-			return 1
-		}
-		return runDelete(g, rest[0])
-
-	case "infer":
-		if len(rest) == 0 {
-			fmt.Fprintln(os.Stderr, "usage: scopr infer <task>")
-			return 1
-		}
-		return runInfer(g, strings.Join(rest, " "))
-
-	case "save":
-		if len(rest) < 2 {
-			fmt.Fprintln(os.Stderr, "usage: scopr save <name> <repo>...")
-			return 1
-		}
-		return runSave(g, strings.TrimPrefix(rest[0], scope.Prefix), rest[1:])
-
-	case "workspace":
-		return runWorkspace(rest)
-	}
-
-	return runLaunch(g, args, label(args))
+	return dispatchArgs(a)
 }
 
 func main() { os.Exit(run(os.Args[1:])) }
