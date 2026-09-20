@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"scopr/internal/files"
 	"scopr/internal/launch"
 	"scopr/internal/picker"
+	"scopr/internal/registry"
 	"scopr/internal/scope"
 	"scopr/internal/scopefile"
 	"scopr/internal/ui"
@@ -327,6 +329,111 @@ func label(args []string) string {
 // as a path, such as frontend/list.
 var verbs = []string{"infer", "save", "list", "rename", "delete", "where", "workspace"}
 
+// runWorkspace handles the workspace verbs.
+func runWorkspace(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: scopr workspace add|list|remove")
+		return 1
+	}
+
+	switch args[0] {
+	case "add":
+		path := "."
+		if len(args) > 1 {
+			path = args[1]
+		}
+		return runWorkspaceAdd(path)
+
+	case "list":
+		return runWorkspaceList()
+
+	case "remove":
+		if len(args) != 2 {
+			fmt.Fprintln(os.Stderr, "usage: scopr workspace remove <name>")
+			return 1
+		}
+		return runWorkspaceRemove(args[1])
+
+	default:
+		fmt.Fprintf(os.Stderr, "unknown workspace command %q; want add, list or remove\n", args[0])
+		return 1
+	}
+}
+
+func runWorkspaceAdd(path string) int {
+	if err := registry.Add(path); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	abs, err := filepath.Abs(path)
+	if err == nil {
+		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+			abs = resolved
+		}
+	}
+	fmt.Fprintf(os.Stderr, "registered %s\n", abs)
+	return 0
+}
+
+// runWorkspaceList prints name and path. Stale entries are shown rather than
+// hidden, so a workspace that moved is visible instead of quietly absent.
+func runWorkspaceList() int {
+	all, err := registry.List()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if len(all) == 0 {
+		fmt.Fprintln(os.Stderr, "no workspaces registered; add one with: scopr workspace add")
+		return 0
+	}
+
+	width := 0
+	for _, w := range all {
+		width = max(width, len(w.Name))
+	}
+
+	for _, w := range all {
+		note := ""
+		if w.Stale {
+			note = "  (missing)"
+		}
+		fmt.Fprintf(os.Stdout, "%-*s  %s%s\n", width, w.Name, w.Path, note)
+	}
+	return 0
+}
+
+// runWorkspaceRemove forgets a workspace. Its scopes stay on disk.
+func runWorkspaceRemove(query string) int {
+	matches, err := registry.Lookup(query)
+
+	// A stale entry cannot be looked up, so fall back to removing by path.
+	if err != nil {
+		if rmErr := registry.Remove(query); rmErr == nil {
+			fmt.Fprintf(os.Stderr, "forgot %s\n", query)
+			return 0
+		}
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	if len(matches) > 1 {
+		fmt.Fprintf(os.Stderr, "%q matches more than one workspace:\n", query)
+		for _, w := range matches {
+			fmt.Fprintf(os.Stderr, "  %s\n", w.Path)
+		}
+		return 1
+	}
+
+	if err := registry.Remove(matches[0].Path); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Fprintf(os.Stderr, "forgot %s\n", matches[0].Path)
+	return 0
+}
+
 func usage() {
 	fmt.Fprint(os.Stderr, `scopr launches Claude Code scoped to chosen repositories.
 
@@ -463,8 +570,7 @@ func run(argv []string) int {
 		return runSave(strings.TrimPrefix(rest[0], scope.Prefix), rest[1:])
 
 	case "workspace":
-		fmt.Fprintln(os.Stderr, "workspace management is not built yet")
-		return 1
+		return runWorkspace(rest)
 	}
 
 	return runLaunch(args, g.prompt, label(args))
