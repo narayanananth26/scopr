@@ -113,3 +113,27 @@ func TestEnvKeepsTheRest(t *testing.T) {
 		t.Error("Env dropped the inherited environment")
 	}
 }
+
+// A status line has less room than a tab, so the exported title is shorter.
+func TestShortTitleIsShorterThanTheTabLabel(t *testing.T) {
+	long := "open the native maps app from a location tile in the web app"
+
+	tab := launch.Title("", long, scoped("web"))
+	short := launch.ShortTitle("", long, scoped("web"))
+
+	if len([]rune(short)) >= len([]rune(tab)) {
+		t.Errorf("ShortTitle %q is not shorter than Title %q", short, tab)
+	}
+	if len([]rune(short)) > 28 {
+		t.Errorf("ShortTitle is %d runes, want 28 or fewer", len([]rune(short)))
+	}
+	if !strings.HasSuffix(short, "...") {
+		t.Errorf("ShortTitle = %q, want it to show it was cut", short)
+	}
+}
+
+func TestShortTitleLeavesShortOnesAlone(t *testing.T) {
+	if got := launch.ShortTitle("surfaces", "", scoped("web")); got != "surfaces" {
+		t.Errorf("ShortTitle = %q, want surfaces untouched", got)
+	}
+}

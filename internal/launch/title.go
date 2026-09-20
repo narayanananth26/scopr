@@ -12,6 +12,16 @@ import (
 // characters before truncating on its own terms.
 const titleLimit = 40
 
+// envTitleLimit is shorter than a tab label. A status line already carries the
+// directory, branch, model and clock, so the title competes for room there in
+// a way a tab title does not.
+const envTitleLimit = 28
+
+// ShortTitle is Title cut for a status line.
+func ShortTitle(name, prompt string, s scope.Scope) string {
+	return truncate(Title(name, prompt, s), envTitleLimit)
+}
+
 // Title labels the session in the terminal tab.
 //
 // Given name wins, since it is what the person called the session. Otherwise a

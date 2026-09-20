@@ -121,6 +121,6 @@ func Env(cfg Config) []string {
 	return append(os.Environ(),
 		"SCOPR_SCOPE="+strings.Join(names, " "),
 		"SCOPR_PRIMARY="+cfg.Scope.Primary().Name,
-		"SCOPR_TITLE="+Title(cfg.Name, cfg.Prompt, cfg.Scope),
+		"SCOPR_TITLE="+ShortTitle(cfg.Name, cfg.Prompt, cfg.Scope),
 	)
 }
