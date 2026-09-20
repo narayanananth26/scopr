@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func send(m Survey, msgs ...tea.Msg) Survey {
@@ -132,11 +133,31 @@ func TestTraceWriterDropsBlankLines(t *testing.T) {
 	}
 }
 
-func TestTruncateCollapsesWhitespace(t *testing.T) {
-	if got := truncate("a\t\tb   c", 40); got != "a b c" {
-		t.Errorf("truncate = %q, want %q", got, "a b c")
+// clipTo counts columns, not bytes: an escape sequence is zero columns wide,
+// and counting it would cut several columns early.
+func TestClipToIsAnsiAware(t *testing.T) {
+	styled := cursor.Render("abc") + "defghij"
+
+	if got := clipTo(styled, 6); ansi.StringWidth(got) > 6 {
+		t.Errorf("clipTo gave %d columns, want 6 or fewer: %q", ansi.StringWidth(got), got)
 	}
-	if got := truncate(strings.Repeat("x", 50), 10); len(got) != 13 {
-		t.Errorf("truncate = %q, want it cut to 10 plus an ellipsis", got)
+}
+
+func TestClipToLeavesShortLinesAlone(t *testing.T) {
+	if got := clipTo("short", 40); got != "short" {
+		t.Errorf("clipTo = %q, want it untouched", got)
+	}
+}
+
+func TestWrapToFoldsLongText(t *testing.T) {
+	got := wrapTo(strings.Repeat("word ", 20), 30)
+
+	for _, line := range strings.Split(got, "\n") {
+		if n := ansi.StringWidth(line); n > 30 {
+			t.Errorf("wrapped line is %d columns: %q", n, line)
+		}
+	}
+	if !strings.Contains(got, "\n") {
+		t.Error("wrapTo did not fold at all")
 	}
 }

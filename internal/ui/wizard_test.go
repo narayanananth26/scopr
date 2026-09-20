@@ -9,6 +9,7 @@ import (
 	"scopr/internal/files"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func wizard() Wizard {
@@ -916,5 +917,44 @@ func TestTagSaysWhenTheScopeHasNoFiles(t *testing.T) {
 	}
 	if strings.Contains(got, "still reading") {
 		t.Errorf("view still claims to be reading:\n%s", got)
+	}
+}
+
+// Without a width, long lines run past the edge of the terminal.
+func TestPromptWrapsToTheTerminalWidth(t *testing.T) {
+	w := atPrompt(t)
+	out, _ := w.Update(tea.WindowSizeMsg{Width: 40, Height: 24})
+	w = out.(Wizard)
+
+	w = type_(w, strings.Repeat("word ", 30))
+
+	for _, line := range strings.Split(w.View(), "\n") {
+		if n := ansi.StringWidth(line); n > 40 {
+			t.Errorf("line is %d columns wide, want 40 or fewer: %q", n, line)
+		}
+	}
+}
+
+func TestListRowsAreClippedToWidth(t *testing.T) {
+	w := wizard()
+	out, _ := w.Update(tea.WindowSizeMsg{Width: 30, Height: 24})
+	w = out.(Wizard)
+
+	w = pick(w, "Goodlife")
+
+	for _, line := range strings.Split(w.View(), "\n") {
+		if n := ansi.StringWidth(line); n > 30 {
+			t.Errorf("row is %d columns wide, want 30 or fewer: %q", n, line)
+		}
+	}
+}
+
+// The size reaches the scope editor too, which renders its own rows.
+func TestWindowSizeReachesTheScopeEditor(t *testing.T) {
+	w := wizard()
+	out, _ := w.Update(tea.WindowSizeMsg{Width: 33, Height: 24})
+
+	if got := out.(Wizard).scope.width; got != 33 {
+		t.Errorf("scope editor width = %d, want 33", got)
 	}
 }

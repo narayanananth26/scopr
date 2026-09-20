@@ -79,7 +79,8 @@ type Wizard struct {
 	name   string
 	nameAt int
 
-	wsAt int
+	wsAt  int
+	width int
 
 	// space is the workspace chosen at the first step; chosen is the scope
 	// chosen at the second, empty when starting fresh.
@@ -536,10 +537,10 @@ func (w Wizard) viewWorkspace() string {
 			scopes = dim.Render(fmt.Sprintf("  %d scopes", n))
 		}
 
-		b.WriteString(cursor + sp.Name + strings.Repeat(" ", width-len(sp.Name)) + scopes + "\n")
+		b.WriteString(clipTo(cursor+sp.Name+strings.Repeat(" ", width-len(sp.Name))+scopes, w.width) + "\n")
 	}
 
-	b.WriteString("\n" + dim.Render("j/k move  enter continue  esc cancel") + "\n")
+	b.WriteString("\n" + dim.Render(clipTo("j/k move  enter continue  esc cancel", w.width)) + "\n")
 	return b.String()
 }
 
@@ -547,7 +548,7 @@ func (w Wizard) viewName() string {
 	var b strings.Builder
 
 	b.WriteString("what are you working on?\n")
-	b.WriteString(dim.Render("  in "+w.space.Name) + "\n\n")
+	b.WriteString(dim.Render(clipTo("  in "+w.space.Name, w.width)) + "\n\n")
 	fmt.Fprintf(&b, "  %s%s%s\n\n", dim.Render(scopePrefix), w.name, cursor.Render(" "))
 
 	if w.Err != nil {
@@ -586,20 +587,20 @@ func (w Wizard) viewName() string {
 		if e.Scope == "" {
 			shown = "(unnamed)"
 		}
-		b.WriteString(cursor + shown + strings.Repeat(" ", width-len(shown)))
+		row := cursor + shown + strings.Repeat(" ", width-len(shown))
 
 		switch {
 		case e.Scope == "":
-			b.WriteString(dim.Render("  start fresh, unnamed"))
+			row += dim.Render("  start fresh, unnamed")
 		case len(e.Repos) > 0:
-			b.WriteString(dim.Render("  " + strings.Join(e.Repos, " ")))
+			row += dim.Render("  " + strings.Join(e.Repos, " "))
 		default:
-			b.WriteString(dim.Render("  new"))
+			row += dim.Render("  new")
 		}
-		b.WriteString("\n")
+		b.WriteString(clipTo(row, w.width) + "\n")
 	}
 
-	b.WriteString("\n" + dim.Render("type to filter  up/down move  enter continue  esc back") + "\n")
+	b.WriteString("\n" + dim.Render(clipTo("type to filter  up/down move  enter continue  esc back", w.width)) + "\n")
 	return b.String()
 }
 
@@ -612,10 +613,10 @@ func (w Wizard) viewPrompt() string {
 		b.WriteString(dim.Render("  "+w.Err.Error()) + "\n")
 	}
 	b.WriteString("\n")
-	fmt.Fprintf(&b, "  %s\n\n", w.promptLine())
+	b.WriteString(indent(wrapTo(w.promptLine(), w.width-2), "  ") + "\n\n")
 
-	b.WriteString(dim.Render("  "+strings.Join(w.scope.Chosen, "  ")) + "\n")
-	b.WriteString("\n" + dim.Render("@ tag a file  ctrl+o "+editorName()+"  enter start  esc back") + "\n")
+	b.WriteString(dim.Render(clipTo("  "+strings.Join(w.scope.Chosen, "  "), w.width)) + "\n")
+	b.WriteString("\n" + dim.Render(clipTo("@ tag a file  ctrl+o "+editorName()+"  enter start  esc back", w.width)) + "\n")
 
 	return b.String()
 }
@@ -625,7 +626,7 @@ func (w Wizard) viewTag() string {
 
 	b.WriteString("what are you working on?\n")
 	b.WriteString(dim.Render("  tagging a file") + "\n\n")
-	fmt.Fprintf(&b, "  %s\n\n", w.promptLine())
+	b.WriteString(indent(wrapTo(w.promptLine(), w.width-2), "  ") + "\n\n")
 
 	switch m := w.matches(); {
 	case !w.filesLoaded:
@@ -637,14 +638,14 @@ func (w Wizard) viewTag() string {
 	default:
 		for i, f := range m {
 			if i == w.tagCursor {
-				b.WriteString(marker.Render("> ") + f.Rel + "\n")
+				b.WriteString(clipTo(marker.Render("> ")+f.Rel, w.width) + "\n")
 				continue
 			}
-			b.WriteString(dim.Render("  "+f.Rel) + "\n")
+			b.WriteString(dim.Render(clipTo("  "+f.Rel, w.width)) + "\n")
 		}
 	}
 
-	b.WriteString("\n" + dim.Render("type to filter  up/down move  enter or tab to tag  esc to drop it") + "\n")
+	b.WriteString("\n" + dim.Render(clipTo("type to filter  up/down move  enter or tab to tag  esc to drop it", w.width)) + "\n")
 	return b.String()
 }
 
@@ -666,6 +667,12 @@ func (w Wizard) Init() tea.Cmd { return nil }
 
 // Update satisfies tea.Model.
 func (w Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if size, ok := msg.(tea.WindowSizeMsg); ok {
+		w.width = size.Width
+		w.scope.width = size.Width
+		return w, nil
+	}
+
 	if loaded, ok := msg.(FilesMsg); ok {
 		w.Files = loaded
 		w.filesLoaded = true

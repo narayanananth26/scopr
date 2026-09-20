@@ -34,6 +34,7 @@ type Model struct {
 
 	mode   mode
 	cursor int
+	width  int
 
 	// add-mode state
 	query      string

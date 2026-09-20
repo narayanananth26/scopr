@@ -32,6 +32,7 @@ type Survey struct {
 	lines   []string
 	started time.Time
 	elapsed time.Duration
+	width   int
 
 	// Err is the survey's failure, once finished.
 	Err error
@@ -66,6 +67,10 @@ type tickMsg struct{}
 
 func (m Survey) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		return m, nil
+
 	case TraceMsg:
 		m.lines = append(m.lines, string(msg))
 		if len(m.lines) > traceLines {
@@ -106,25 +111,17 @@ func (m Survey) View() string {
 	b.WriteString("\n")
 
 	if task := strings.TrimSpace(m.Task); task != "" {
-		b.WriteString(dim.Render("  "+truncate(task, 72)) + "\n")
+		b.WriteString(dim.Render(clipTo("  "+task, m.width)) + "\n")
 	}
 
 	if len(m.lines) > 0 {
 		b.WriteString("\n")
 		for _, line := range m.lines {
-			b.WriteString(dim.Render("  "+truncate(line, 96)) + "\n")
+			b.WriteString(dim.Render(clipTo("  "+line, m.width)) + "\n")
 		}
 	}
 
 	return b.String()
-}
-
-func truncate(s string, n int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
 }
 
 // Work is the long operation. It writes progress lines to trace and returns

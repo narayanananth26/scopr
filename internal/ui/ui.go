@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // ErrCancelled reports that nothing was chosen. Starting nothing is the right
@@ -36,6 +37,11 @@ func (m Model) Init() tea.Cmd { return nil }
 // Update satisfies tea.Model. Keystrokes are delegated to key so the logic is
 // testable without terminal messages.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if size, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = size.Width
+		return m, nil
+	}
+
 	k, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil
@@ -60,7 +66,7 @@ func (m Model) viewScope() string {
 
 	b.WriteString("scope\n")
 	if m.Header != "" {
-		b.WriteString(dim.Render("  "+m.Header) + "\n")
+		b.WriteString(dim.Render(clipTo("  "+m.Header, m.width)) + "\n")
 	}
 	b.WriteString("\n")
 
@@ -86,21 +92,21 @@ func (m Model) viewScope() string {
 			shown = primary.Render(name)
 		}
 
-		b.WriteString(cursor + shown + strings.Repeat(" ", width-len(name)))
+		row := cursor + shown + strings.Repeat(" ", width-len(name))
 
 		switch note := m.Notes[name]; {
 		case i == 0 && note != "":
-			b.WriteString(dim.Render("  working directory - " + note))
+			row += dim.Render("  working directory - " + note)
 		case i == 0:
-			b.WriteString(dim.Render("  working directory"))
+			row += dim.Render("  working directory")
 		case note != "":
-			b.WriteString(dim.Render("  " + note))
+			row += dim.Render("  " + note)
 		}
-		b.WriteString("\n")
+		b.WriteString(clipTo(row, m.width) + "\n")
 	}
 
 	b.WriteString("\n")
-	b.WriteString(dim.Render("j/k move  J/K reorder  x remove  a add  enter start  esc cancel"))
+	b.WriteString(dim.Render(clipTo("j/k move  J/K reorder  x remove  a add  enter start  esc cancel", m.width)))
 	b.WriteString("\n")
 
 	return b.String()
@@ -129,7 +135,7 @@ func (m Model) viewAdd() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(dim.Render("type to filter  up/down move  enter add  esc back"))
+	b.WriteString(dim.Render(clipTo("type to filter  up/down move  enter add  esc back", m.width)))
 	b.WriteString("\n")
 
 	return b.String()
@@ -152,4 +158,39 @@ func Run(m Model) ([]string, error) {
 		return nil, ErrCancelled
 	}
 	return result, nil
+}
+
+// defaultWidth is used until the terminal says otherwise. Eighty is the
+// conventional fallback and narrow enough to be safe.
+const defaultWidth = 80
+
+// wrapTo folds text at the given width, so a long prompt stays on screen
+// rather than running past the edge.
+//
+// ANSI-aware: the cursor and the styles are escape sequences, and counting
+// them as characters would wrap several columns early.
+func wrapTo(s string, width int) string {
+	if width <= 0 {
+		width = defaultWidth
+	}
+	return ansi.Wrap(s, width, "")
+}
+
+// clipTo cuts a line at the given width, for rows where wrapping would
+// misalign a list rather than help.
+func clipTo(s string, width int) string {
+	if width <= 0 {
+		width = defaultWidth
+	}
+	return ansi.Truncate(s, width, "...")
+}
+
+// indent puts a prefix on every line, so wrapped text lines up under the
+// first.
+func indent(s, prefix string) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = prefix + line
+	}
+	return strings.Join(lines, "\n")
 }
