@@ -147,9 +147,12 @@ func runRename(args []string) int {
 // 21-second tail.
 const surveyTimeout = 90 * time.Second
 
-// runInit walks name, scope and prompt, then starts the session. A new name
+// runWizard walks name, scope and prompt, then starts the session. A new name
 // saves the scope once it is known to resolve.
-func runInit() int {
+//
+// This is what bare scopr does. The name step is one Enter to skip, and it
+// buys a label and a prompt that a bare picker had nowhere to put.
+func runWizard() int {
 	root, err := findRoot()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -224,23 +227,6 @@ func runInit() int {
 	return runLaunch(repos, w.Prompt(), w.Label())
 }
 
-// choose opens the editor with nothing chosen.
-func choose(root string) ([]string, int) {
-	args, err := picker.Pick(root)
-
-	switch {
-	case err == nil:
-		return args, 0
-
-	case errors.Is(err, picker.ErrCancelled):
-		return nil, 0
-
-	default:
-		fmt.Fprintln(os.Stderr, err)
-		return nil, 1
-	}
-}
-
 // runInfer surveys the workspace for a task, shows what it found, and starts a
 // session once approved.
 func runInfer(task, prompt string, verbose bool) int {
@@ -305,20 +291,12 @@ func runInfer(task, prompt string, verbose bool) int {
 }
 
 // runLaunch resolves names to a scope and starts a session in the primary
-// repo, returning claude's exit code. With no names it asks.
+// repo, returning claude's exit code.
 func runLaunch(args []string, prompt, name string) int {
 	root, err := findRoot()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
-	}
-
-	if len(args) == 0 {
-		picked, code := choose(root)
-		if len(picked) == 0 {
-			return code
-		}
-		args = picked
 	}
 
 	s, err := scope.ResolveArgs(root, args)
@@ -348,14 +326,13 @@ func usage() {
 	fmt.Fprint(os.Stderr, `scopr launches Claude Code scoped to chosen repositories.
 
 usage:
-  scopr                            pick a scope or repos interactively
+  scopr                            name, scope and prompt, step by step
   scopr [flags] <repo|@scope>...   start a session; the first repo becomes the working directory
   scopr --infer <task>             suggest a scope for the task, then start
   scopr --save <name> <repo>...    save a scope under that name
   scopr --rename <old> <new>       rename a saved scope
   scopr --delete <name>            delete a saved scope
   scopr --list                     list saved scopes
-  scopr init                       name, scope and prompt, step by step
   scopr --where                    print the workspace root
 
 flags:
@@ -382,10 +359,6 @@ func main() {
 
 	args := flag.Args()
 
-	if len(args) == 1 && args[0] == "init" {
-		os.Exit(runInit())
-	}
-
 	switch {
 	case *where:
 		os.Exit(runWhere())
@@ -403,6 +376,8 @@ func main() {
 			os.Exit(1)
 		}
 		os.Exit(runSave(strings.TrimPrefix(*save, scope.Prefix), args))
+	case len(args) == 0:
+		os.Exit(runWizard())
 	default:
 		os.Exit(runLaunch(args, *prompt, label(args)))
 	}
