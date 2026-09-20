@@ -9,6 +9,7 @@ import (
 type Command struct {
 	Name     string
 	Use      string
+	Help     string
 	Children []*Command
 	Accepts  []*Flag
 	Min      int
@@ -58,61 +59,71 @@ func flagset(t *Table, names ...string) []*Flag {
 
 var Commands = &Command{
 	Use:     "<@scope|repo>...",
+	Help:    "start a session; the first repository becomes the working directory",
 	Min:     0,
 	Max:     -1,
 	Accepts: flagset(Flags, "workspace", "prompt", "label"),
 	Children: []*Command{
 		{
 			Name: "run", Use: "<@scope|repo>...",
-			Min: 1, Max: -1,
+			Help: "start a session, even for a repository named like a command",
+			Min:  1, Max: -1,
 			Accepts: flagset(Flags, "workspace", "prompt", "label"),
 		},
 		{
 			Name: "infer", Use: "<task>",
-			Min: 1, Max: -1, FreeText: true,
+			Help: "suggest a scope for the task, then start",
+			Min:  1, Max: -1, FreeText: true,
 			Accepts: flagset(Flags, "workspace", "prompt", "label", "verbose"),
 		},
 		{
 			Name: "list",
+			Help: "list saved scopes",
 			Min:  0, Max: 0,
 			Accepts: flagset(Flags, "workspace", "json"),
 		},
 		{
 			Name: "show", Use: "@name",
-			Min: 1, Max: 1,
+			Help: "print the repositories a scope names",
+			Min:  1, Max: 1,
 			Accepts: flagset(Flags, "workspace", "json"),
 		},
 		{
 			Name: "save", Use: "@name <repo>...",
-			Min: 2, Max: -1,
+			Help: "save a scope under that name",
+			Min:  2, Max: -1,
 			Accepts: flagset(Flags, "workspace"),
 		},
 		{
 			Name: "delete", Use: "@name",
-			Min: 1, Max: 1,
+			Help: "delete a saved scope",
+			Min:  1, Max: 1,
 			Accepts: flagset(Flags, "workspace"),
 		},
 		{
 			Name: "rename", Use: "@old @new",
-			Min: 2, Max: 2,
+			Help: "rename a saved scope",
+			Min:  2, Max: 2,
 			Accepts: flagset(Flags, "workspace"),
 		},
 		{
 			Name: "where",
+			Help: "print the workspace root",
 			Min:  0, Max: 0,
 			Accepts: flagset(Flags, "workspace", "json"),
 		},
 		{
 			Name: "workspace",
+			Help: "manage registered workspaces",
 			Min:  0, Max: 0,
 			Children: []*Command{
-				{Name: "list", Min: 0, Max: 0, Accepts: flagset(Flags, "json")},
-				{Name: "add", Use: "[path]", Min: 0, Max: 1},
-				{Name: "remove", Use: "<name>", Min: 1, Max: 1},
+				{Name: "list", Help: "list registered workspaces", Min: 0, Max: 0, Accepts: flagset(Flags, "json")},
+				{Name: "add", Use: "[path]", Help: "register a workspace", Min: 0, Max: 1},
+				{Name: "remove", Use: "<name>", Help: "forget a workspace", Min: 1, Max: 1},
 			},
 		},
-		{Name: "help", Use: "[command]", Min: 0, Max: 1},
-		{Name: "version", Min: 0, Max: 0},
+		{Name: "help", Use: "[command]", Help: "show usage for a command", Min: 0, Max: 1},
+		{Name: "version", Help: "print the version", Min: 0, Max: 0},
 	},
 }
 
