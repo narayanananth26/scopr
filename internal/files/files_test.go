@@ -10,8 +10,6 @@ import (
 	"testing"
 )
 
-// repo builds a git repo with the given files tracked, plus an ignored
-// node_modules to prove git is doing the filtering.
 func repo(t *testing.T, dir string, paths ...string) {
 	t.Helper()
 
@@ -79,7 +77,6 @@ func TestListsTrackedFiles(t *testing.T) {
 	}
 }
 
-// Ignored files are the reason git does the listing rather than a walk.
 func TestSkipsIgnoredFiles(t *testing.T) {
 	root, primary := fixture(t)
 
@@ -96,8 +93,6 @@ func TestSkipsIgnoredFiles(t *testing.T) {
 	}
 }
 
-// A file outside the primary must be typed with ../, since the session's cwd
-// is the primary repo.
 func TestPathsAreRelativeToPrimary(t *testing.T) {
 	root, primary := fixture(t)
 
@@ -181,8 +176,6 @@ func TestMatchRespectsLimit(t *testing.T) {
 	}
 }
 
-// Subsequence, not substring: people type the shape of a path, not a slice of
-// it. Matching is deliberately permissive, so ranking is what makes it usable.
 func TestMatchIsSubsequence(t *testing.T) {
 	got := Match(sample(), "srcchk", 10)
 
@@ -193,13 +186,11 @@ func TestMatchIsSubsequence(t *testing.T) {
 		t.Errorf("best match = %q, want the tightest run under src/", got[0].Rel)
 	}
 
-	// A substring matcher would find nothing here.
 	if len(Match(sample(), "cmpchkbtn", 10)) == 0 {
 		t.Error("a scattered subsequence matched nothing")
 	}
 }
 
-// A hit in the file name beats one buried in the directories above it.
 func TestMatchPrefersFileName(t *testing.T) {
 	in := []File{
 		{Rel: "checkout/legacy/util.ts", Base: "util.ts"},

@@ -12,24 +12,14 @@ import (
 	"strings"
 )
 
-// walkCap bounds a non-git directory, which has no .gitignore to keep a walk
-// honest.
 const walkCap = 5000
 
-// File is a taggable path.
 type File struct {
-	// Rel is the path as it must be typed after @: relative to the primary
-	// repo, so a file elsewhere in the scope reads as ../other/src/thing.ts.
 	Rel string
 
-	// Base is the file name, for ranking.
 	Base string
 }
 
-// List returns every taggable file in the scope.
-//
-// Tracked files come from git, which applies .gitignore for free. Without that
-// a walk of a JavaScript repo returns mostly node_modules.
 func List(ctx context.Context, primary string, repos []string) ([]File, error) {
 	var out []File
 
@@ -59,7 +49,6 @@ func list(ctx context.Context, dir string) ([]string, error) {
 	return walk(dir)
 }
 
-// tracked asks git, so ignored files never appear.
 func tracked(ctx context.Context, dir string) ([]string, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "ls-files", "-z")
 
@@ -78,8 +67,6 @@ func tracked(ctx context.Context, dir string) ([]string, error) {
 	return paths, nil
 }
 
-// walk covers a directory git does not track. Dotted directories and
-// node_modules are skipped, and the result is capped.
 func walk(dir string) ([]string, error) {
 	var paths []string
 
@@ -111,10 +98,6 @@ func walk(dir string) ([]string, error) {
 	return paths, nil
 }
 
-// Match returns files matching query as a subsequence, best first.
-//
-// Subsequence rather than substring so "glweb" finds gl-webapp, which is how
-// people type paths they half remember.
 func Match(in []File, query string, limit int) []File {
 	if query == "" {
 		if len(in) > limit {
@@ -156,8 +139,6 @@ func Match(in []File, query string, limit int) []File {
 	return out
 }
 
-// score is lower for better matches: a hit in the file name beats one in the
-// directories above it, and a tighter run of characters beats a scattered one.
 func score(f File, q string) (int, bool) {
 	span, ok := subsequence(strings.ToLower(f.Rel), q)
 	if !ok {
@@ -170,8 +151,6 @@ func score(f File, q string) (int, bool) {
 	return span + 1000, true
 }
 
-// subsequence reports whether q appears in s in order, and how much of s the
-// match spanned.
 func subsequence(s, q string) (int, bool) {
 	if q == "" {
 		return 0, true

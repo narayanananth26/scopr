@@ -12,8 +12,6 @@ import (
 	"scopr/internal/scopefile"
 )
 
-// isolate points the registry at a temp config directory so tests never touch
-// the real one. HOME as well as XDG_CONFIG_HOME, since a fallback reads it.
 func isolate(t *testing.T) {
 	t.Helper()
 
@@ -22,7 +20,6 @@ func isolate(t *testing.T) {
 	t.Setenv("HOME", cfg)
 }
 
-// ws makes a workspace at root/parts and registers it.
 func ws(t *testing.T, root string, parts ...string) string {
 	t.Helper()
 
@@ -36,7 +33,6 @@ func ws(t *testing.T, root string, parts ...string) string {
 	return dir
 }
 
-// unregistered makes a workspace without registering it.
 func unregistered(t *testing.T, root string, parts ...string) string {
 	t.Helper()
 
@@ -80,7 +76,6 @@ func TestOnePrefersTheFlag(t *testing.T) {
 	}
 }
 
-// Standing somewhere is a stronger signal than being registered.
 func TestOneUsesTheWorkspaceYouAreIn(t *testing.T) {
 	isolate(t)
 	root := tempRoot(t)
@@ -101,7 +96,6 @@ func TestOneUsesTheWorkspaceYouAreIn(t *testing.T) {
 	}
 }
 
-// An unregistered workspace still works from inside it.
 func TestOneWorksInAnUnregisteredWorkspace(t *testing.T) {
 	isolate(t)
 	root := tempRoot(t)
@@ -116,7 +110,6 @@ func TestOneWorksInAnUnregisteredWorkspace(t *testing.T) {
 	}
 }
 
-// One registered workspace is not a guess.
 func TestOneFallsBackToTheOnlyRegistered(t *testing.T) {
 	isolate(t)
 	root := tempRoot(t)
@@ -187,7 +180,6 @@ func TestScopeFindsItWhereYouAreStanding(t *testing.T) {
 	}
 }
 
-// Outside any workspace, every registered one is searched.
 func TestScopeSearchesEveryWorkspace(t *testing.T) {
 	isolate(t)
 	root := tempRoot(t)
@@ -206,7 +198,6 @@ func TestScopeSearchesEveryWorkspace(t *testing.T) {
 	}
 }
 
-// Standing in a workspace that lacks the scope still finds it elsewhere.
 func TestScopeFallsBackWhenLocalWorkspaceLacksIt(t *testing.T) {
 	isolate(t)
 	root := tempRoot(t)
@@ -250,7 +241,6 @@ func TestScopeUnknown(t *testing.T) {
 	}
 }
 
-// The flag narrows to one workspace, so a scope missing there is missing.
 func TestScopeWithFlagDoesNotSearchElsewhere(t *testing.T) {
 	isolate(t)
 	root := tempRoot(t)
@@ -283,7 +273,6 @@ func TestAllListsEveryScope(t *testing.T) {
 	}
 }
 
-// An unregistered workspace is invisible to a global listing, by design.
 func TestAllSkipsUnregistered(t *testing.T) {
 	isolate(t)
 	root := tempRoot(t)

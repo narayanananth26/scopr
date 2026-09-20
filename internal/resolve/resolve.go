@@ -11,35 +11,22 @@ import (
 )
 
 var (
-	// ErrNoWorkspace reports that nothing said which workspace to act on.
 	ErrNoWorkspace = errors.New("not inside a workspace")
 
-	// ErrAmbiguous reports more than one candidate. Guessing would act on the
-	// wrong workspace, which is the failure this tool exists to prevent.
 	ErrAmbiguous = errors.New("more than one match")
 )
 
-// Options is what the caller knows before resolving.
 type Options struct {
-	// Workspace is the --workspace value, empty when not given.
 	Workspace string
 
-	// Cwd is where the command was run.
 	Cwd string
 }
 
-// Hit is a scope found in a workspace.
 type Hit struct {
 	Workspace registry.Workspace
 	Scope     string
 }
 
-// One returns the workspace a command should act on, for the commands that
-// need exactly one: saving, renaming, surveying.
-//
-// Order is --workspace, then the workspace the command was run in, then the
-// only registered one if there is only one. Anything less certain is an error
-// rather than a guess.
 func One(opt Options) (string, error) {
 	if opt.Workspace != "" {
 		matches, err := registry.Lookup(opt.Workspace)
@@ -74,12 +61,6 @@ func One(opt Options) (string, error) {
 	return "", fmt.Errorf("%w; name one with --workspace, or run from inside it", ErrNoWorkspace)
 }
 
-// Scope finds which workspaces hold a named scope.
-//
-// The workspace the command was run in wins outright when it has the scope, so
-// standing somewhere is a stronger signal than being registered. Otherwise
-// every registered workspace is searched, and every hit is returned for the
-// caller to choose between.
 func Scope(opt Options, name string) ([]Hit, error) {
 	name = strings.TrimPrefix(name, "@")
 
@@ -119,8 +100,6 @@ func Scope(opt Options, name string) ([]Hit, error) {
 	return hits, nil
 }
 
-// All returns every scope in every registered workspace, for offering a
-// choice rather than resolving a name.
 func All() ([]Hit, error) {
 	live, err := registry.Live()
 	if err != nil {

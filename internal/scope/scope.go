@@ -12,8 +12,6 @@ var (
 	ErrDuplicate = errors.New("repository named twice")
 )
 
-// Scope is an ordered set of repositories. Repos[0] is the primary and becomes
-// the session's working directory.
 type Scope struct {
 	Root  string
 	Repos []repo.Repo
@@ -23,14 +21,11 @@ func (s Scope) Primary() repo.Repo { return s.Repos[0] }
 
 func (s Scope) Others() []repo.Repo { return s.Repos[1:] }
 
-// named is a repository name plus the scope it was expanded from, empty when
-// it was typed directly.
 type named struct {
 	name string
 	from string
 }
 
-// attribute prefixes err with the scope a name came from.
 func (n named) attribute(err error) error {
 	if n.from == "" {
 		return err
@@ -38,9 +33,6 @@ func (n named) attribute(err error) error {
 	return fmt.Errorf("%s%s: %w", Prefix, n.from, err)
 }
 
-// Resolve maps names to repositories under root, keeping the given order.
-// Duplicates are matched by resolved path, so two spellings of one repo
-// collide. Reports every bad name at once; returns no scope on any failure.
 func Resolve(root string, names []string) (Scope, error) {
 	ns := make([]named, len(names))
 	for i, name := range names {
@@ -93,9 +85,6 @@ func resolveNamed(root string, names []named) (Scope, error) {
 	return Scope{Root: root, Repos: resolved}, nil
 }
 
-// duplicateError says who claimed the repository, naming scopes when the
-// collision came from them. Two scopes colliding on a name reads as a bug
-// unless the message says which scopes.
 func duplicateError(first, second named, path string) error {
 	switch {
 	case first.from != "" && second.from != "" && first.from == second.from:

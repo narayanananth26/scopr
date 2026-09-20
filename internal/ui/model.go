@@ -5,46 +5,32 @@ import (
 	"strings"
 )
 
-// mode is which list the cursor is in.
 type mode int
 
 const (
-	modeScope mode = iota // editing the chosen set
-	modeAdd               // filtering the workspace to add one
+	modeScope mode = iota
+	modeAdd
 )
 
-// Model edits an ordered set of repository names.
-//
-// Order is not cosmetic for the first entry: it becomes the working directory
-// and decides whose config loads. The rest become --add-dir, where order has
-// no effect.
 type Model struct {
-	// Chosen is the scope being edited, in order.
 	Chosen []string
 
-	// Available is every name in the workspace, including those chosen.
 	Available []string
 
-	// Notes describes entries that came from somewhere, keyed by name. A
-	// repository added by hand has none.
 	Notes map[string]string
 
-	// Header is shown above the list, for saying where the scope came from.
 	Header string
 
 	mode   mode
 	cursor int
 	width  int
 
-	// add-mode state
 	query      string
 	addCursor  int
 	addMatches []string
 
-	// Done is set when the person accepted the scope.
 	Done bool
 
-	// Cancelled is set when they backed out.
 	Cancelled bool
 }
 
@@ -56,7 +42,6 @@ func New(chosen, available []string) Model {
 	return m
 }
 
-// Result is the edited scope, or nil if cancelled or emptied.
 func (m Model) Result() []string {
 	if m.Cancelled || len(m.Chosen) == 0 {
 		return nil
@@ -64,7 +49,6 @@ func (m Model) Result() []string {
 	return m.Chosen
 }
 
-// candidates are the workspace names not already chosen, filtered by query.
 func (m Model) candidates() []string {
 	var out []string
 	for _, name := range m.Available {
@@ -78,8 +62,6 @@ func (m Model) candidates() []string {
 	return out
 }
 
-// key applies one keystroke. Split from Update so the logic is exercised
-// without constructing terminal messages.
 func (m Model) key(k string) Model {
 	if m.mode == modeAdd {
 		return m.keyAdd(k)
@@ -107,8 +89,6 @@ func (m Model) keyScope(k string) Model {
 			m.cursor++
 		}
 
-	// Moving an entry is how the primary is chosen: the first is the one
-	// that matters.
 	case "K", "shift+up":
 		if m.cursor > 0 {
 			m.Chosen[m.cursor-1], m.Chosen[m.cursor] = m.Chosen[m.cursor], m.Chosen[m.cursor-1]
@@ -173,7 +153,7 @@ func (m Model) keyAdd(k string) Model {
 		}
 
 	default:
-		// Single printable runes extend the filter.
+
 		if len([]rune(k)) == 1 {
 			m.query += k
 			m.addCursor = 0

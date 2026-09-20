@@ -11,14 +11,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// ErrCancelled reports that nothing was chosen. Starting nothing is the right
-// outcome when nobody chose anything.
 var ErrCancelled = errors.New("selection cancelled")
 
-// renderer draws to stderr, where the screens go. lipgloss's default renderer
-// detects the colour profile from stdout; when stdout is redirected it decides
-// the terminal has no colour and silently strips every style, including the
-// cursor.
 var renderer = lipgloss.NewRenderer(os.Stderr)
 
 var (
@@ -26,16 +20,11 @@ var (
 	primary = renderer.NewStyle().Bold(true)
 	marker  = renderer.NewStyle().Bold(true)
 
-	// cursor is reverse video, so it reads as a block sitting on a character.
-	// Bold alone is invisible on a character that is already there.
 	cursor = renderer.NewStyle().Reverse(true)
 )
 
-// Init satisfies tea.Model.
 func (m Model) Init() tea.Cmd { return nil }
 
-// Update satisfies tea.Model. Keystrokes are delegated to key so the logic is
-// testable without terminal messages.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if size, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = size.Width
@@ -141,7 +130,6 @@ func (m Model) viewAdd() string {
 	return b.String()
 }
 
-// Run shows the editor and returns the accepted scope.
 func Run(m Model) ([]string, error) {
 	out, err := tea.NewProgram(m, tea.WithOutput(os.Stderr), tea.WithAltScreen()).Run()
 	if err != nil {
@@ -160,15 +148,8 @@ func Run(m Model) ([]string, error) {
 	return result, nil
 }
 
-// defaultWidth is used until the terminal says otherwise. Eighty is the
-// conventional fallback and narrow enough to be safe.
 const defaultWidth = 80
 
-// wrapTo folds text at the given width, so a long prompt stays on screen
-// rather than running past the edge.
-//
-// ANSI-aware: the cursor and the styles are escape sequences, and counting
-// them as characters would wrap several columns early.
 func wrapTo(s string, width int) string {
 	if width <= 0 {
 		width = defaultWidth
@@ -176,8 +157,6 @@ func wrapTo(s string, width int) string {
 	return ansi.Wrap(s, width, "")
 }
 
-// clipTo cuts a line at the given width, for rows where wrapping would
-// misalign a list rather than help.
 func clipTo(s string, width int) string {
 	if width <= 0 {
 		width = defaultWidth
@@ -185,8 +164,6 @@ func clipTo(s string, width int) string {
 	return ansi.Truncate(s, width, "...")
 }
 
-// indent puts a prefix on every line, so wrapped text lines up under the
-// first.
 func indent(s, prefix string) string {
 	lines := strings.Split(s, "\n")
 	for i, line := range lines {

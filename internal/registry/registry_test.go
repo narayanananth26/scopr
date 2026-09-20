@@ -8,8 +8,6 @@ import (
 	"testing"
 )
 
-// isolate points the registry at a temp config directory, so tests never touch
-// the real one.
 func isolate(t *testing.T) string {
 	t.Helper()
 
@@ -20,7 +18,6 @@ func isolate(t *testing.T) string {
 	return cfg
 }
 
-// workspaceDir makes a directory under a resolved temp root.
 func workspaceDir(t *testing.T, parts ...string) string {
 	t.Helper()
 
@@ -52,8 +49,6 @@ func names(in []Workspace) []string {
 	return out
 }
 
-// Add is the only moment scopr learns a directory is meant to be a workspace,
-// so it is where the marker is created.
 func TestAddCreatesMarkerDirectory(t *testing.T) {
 	isolate(t)
 	dir := workspaceDir(t, "Goodlife")
@@ -136,7 +131,6 @@ func TestRemoveUnknownErrors(t *testing.T) {
 	}
 }
 
-// Removing the registration leaves the scopes alone.
 func TestRemoveKeepsTheMarker(t *testing.T) {
 	isolate(t)
 	dir := workspaceDir(t, "Goodlife")
@@ -153,7 +147,6 @@ func TestRemoveKeepsTheMarker(t *testing.T) {
 	}
 }
 
-// A dead entry should not break an unrelated launch, nor vanish unseen.
 func TestListMarksMissingPathsStale(t *testing.T) {
 	isolate(t)
 	a, b := workspaceDir(t, "A"), workspaceDir(t, "B")
@@ -197,7 +190,6 @@ func TestListMarksMissingPathsStale(t *testing.T) {
 	}
 }
 
-// Losing the marker is as stale as losing the directory.
 func TestListMarksMarkerlessStale(t *testing.T) {
 	isolate(t)
 	dir := workspaceDir(t, "Goodlife")
@@ -243,7 +235,6 @@ func TestCollidingNamesGrowByOneSegment(t *testing.T) {
 	}
 }
 
-// The naive implementation re-expands everything on any collision.
 func TestUninvolvedNamesDoNotGrow(t *testing.T) {
 	got := Names([]string{
 		"/Users/h/Desktop/Ananth/Goodlife",
@@ -256,7 +247,6 @@ func TestUninvolvedNamesDoNotGrow(t *testing.T) {
 	}
 }
 
-// Sharing a parent means one segment is not enough.
 func TestCollisionResolvesAtDepthTwo(t *testing.T) {
 	got := Names([]string{"/a/x/shared/repo", "/a/y/shared/repo"})
 
@@ -324,7 +314,6 @@ func TestLookupByFullPath(t *testing.T) {
 	}
 }
 
-// A partial segment is not a match: "life" must not find "Goodlife".
 func TestLookupRejectsPartialSegment(t *testing.T) {
 	isolate(t)
 	dir := workspaceDir(t, "Goodlife")
@@ -338,7 +327,6 @@ func TestLookupRejectsPartialSegment(t *testing.T) {
 	}
 }
 
-// Guessing between two workspaces would launch against the wrong one.
 func TestLookupAmbiguousReturnsAll(t *testing.T) {
 	isolate(t)
 	a := workspaceDir(t, "Ananth", "Goodlife")
@@ -374,7 +362,6 @@ func TestLookupUnknown(t *testing.T) {
 	}
 }
 
-// Resolution must not offer a workspace that is gone.
 func TestLookupSkipsStale(t *testing.T) {
 	isolate(t)
 	dir := workspaceDir(t, "Goodlife")
@@ -391,8 +378,6 @@ func TestLookupSkipsStale(t *testing.T) {
 	}
 }
 
-// The registry must be where XDG says, and must not fall back to macOS's
-// Application Support, which ignores XDG_CONFIG_HOME.
 func TestRegistryHonoursXDGConfigHome(t *testing.T) {
 	cfg := isolate(t)
 

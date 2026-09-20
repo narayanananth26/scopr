@@ -8,15 +8,8 @@ import (
 	"scopr/internal/scope"
 )
 
-// titleLimit is set by the tighter of the two places a label appears. A status
-// line already carries the directory, branch, model and clock, and a tmux
-// window name sits beside every other window, so neither has room for more.
 const titleLimit = 28
 
-// Title labels the session in the terminal tab.
-//
-// Given name wins, since it is what the person called the session. Otherwise a
-// prompt says what they are doing, and the repositories say where.
 func Title(name, prompt string, s scope.Scope) string {
 	if t := clean(name); t != "" {
 		return truncate(t, titleLimit)
@@ -33,19 +26,10 @@ func Title(name, prompt string, s scope.Scope) string {
 	return truncate(strings.Join(names, " "), titleLimit)
 }
 
-// InTmux reports whether the session is running inside tmux.
 func InTmux() bool { return os.Getenv("TMUX") != "" }
 
-// tmuxTitle names the tmux window.
-//
-// tmux is the only place the label is set. OSC sequences were tried and
-// dropped: tmux ignores them outright, and outside tmux a terminal with shell
-// integration re-asserts its own title, so the sequence was doing nothing
-// where anyone would have seen it. Outside tmux the scope travels in the
-// environment instead, for a status line to show.
-//
-// Asking tmux directly works whatever allow-rename is set to, and turns off
-// automatic renaming for the window as a side effect.
+// OSC sequences were tried and dropped: tmux ignores them, and outside tmux a
+// terminal with shell integration re-asserts its own title.
 func tmuxTitle(title string) error {
 	if title == "" {
 		return nil
@@ -53,7 +37,6 @@ func tmuxTitle(title string) error {
 	return exec.Command("tmux", "rename-window", "--", title).Run()
 }
 
-// tmuxWindow is the current window name and whether tmux was renaming it.
 func tmuxWindow() (name string, auto bool) {
 	out, err := exec.Command("tmux", "display-message", "-p", "#W").Output()
 	if err != nil {
@@ -68,8 +51,6 @@ func tmuxWindow() (name string, auto bool) {
 	return name, strings.TrimSpace(string(mode)) == "on"
 }
 
-// restoreTmux puts the window name back. Re-enabling automatic renaming is
-// enough when tmux was managing the name, since it renames immediately.
 func restoreTmux(name string, auto bool) {
 	if auto {
 		_ = exec.Command("tmux", "set-window-option", "automatic-rename", "on").Run()
@@ -80,8 +61,6 @@ func restoreTmux(name string, auto bool) {
 	}
 }
 
-// clean strips the control characters that would break the sequence, since a
-// prompt is arbitrary text.
 func clean(s string) string {
 	s = strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f {

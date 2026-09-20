@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// VISUAL wins: it is the full-screen editor, where EDITOR may be a line one.
 func TestEditorCommandPrefersVisual(t *testing.T) {
 	t.Setenv("VISUAL", "nvim")
 	t.Setenv("EDITOR", "ed")
@@ -33,7 +32,6 @@ func TestEditorCommandFallsBackToVi(t *testing.T) {
 	}
 }
 
-// EDITOR often carries flags, such as code -w or emacsclient -nw.
 func TestEditorCommandSplitsArguments(t *testing.T) {
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "code -w --new-window")

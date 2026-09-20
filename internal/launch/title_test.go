@@ -52,8 +52,6 @@ func TestTitleTruncates(t *testing.T) {
 	}
 }
 
-// A prompt is arbitrary text, and a stray escape would break the sequence or
-// let the text drive the terminal.
 func TestTitleStripsControlCharacters(t *testing.T) {
 	got := launch.Title("", "trace\x1b]0;evil\x07 the call\n", scoped("gl-panel"))
 
@@ -99,7 +97,6 @@ func TestEnvCarriesTheScope(t *testing.T) {
 	}
 }
 
-// The session still needs the environment it would otherwise have had.
 func TestEnvKeepsTheRest(t *testing.T) {
 	t.Setenv("SCOPR_TEST_CANARY", "kept")
 

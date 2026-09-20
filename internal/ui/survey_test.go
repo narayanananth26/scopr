@@ -40,8 +40,6 @@ func TestSurveyShowsTraceLines(t *testing.T) {
 	}
 }
 
-// The trace is context for the wait, not a transcript: it must not grow
-// without bound.
 func TestSurveyKeepsOnlyRecentTrace(t *testing.T) {
 	m := NewSurvey("x")
 	for i := range traceLines + 5 {
@@ -71,7 +69,6 @@ func TestSurveyDoneCarriesError(t *testing.T) {
 	}
 }
 
-// Ctrl-C during a 30-second wait must stop it rather than be swallowed.
 func TestSurveyInterrupts(t *testing.T) {
 	for _, key := range []tea.KeyType{tea.KeyCtrlC, tea.KeyEsc} {
 		m := send(NewSurvey("x"), tea.KeyMsg{Type: key})
@@ -106,7 +103,6 @@ func TestTraceWriterSplitsLines(t *testing.T) {
 		got = append(got, string(msg.(TraceMsg)))
 	}}
 
-	// Split mid-line, as a pipe would deliver it.
 	w.Write([]byte("Grep chec"))
 	w.Write([]byte("kout\nRead api"))
 	w.Write([]byte(".go\n"))
@@ -133,8 +129,6 @@ func TestTraceWriterDropsBlankLines(t *testing.T) {
 	}
 }
 
-// clipTo counts columns, not bytes: an escape sequence is zero columns wide,
-// and counting it would cut several columns early.
 func TestClipToIsAnsiAware(t *testing.T) {
 	styled := cursor.Render("abc") + "defghij"
 

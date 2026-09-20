@@ -18,13 +18,10 @@ const (
 	DefaultBin   = "claude"
 	DefaultModel = "sonnet"
 
-	// schema must stay flat. Only the flat shape has been tested; nested
-	// objects, enums and oneOf may degrade.
+	// Must stay flat: nested objects, enums and oneOf are untested.
 	schema = `{"type":"object","properties":{"repos":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"reason":{"type":"string"}},"required":["name","reason"],"additionalProperties":false}}},"required":["repos"],"additionalProperties":false}`
 )
 
-// ErrDeclined reports that the survey ran but produced no repositories. The
-// CLI calls this success, so it has to be detected rather than trusted.
 var ErrDeclined = errors.New("no repositories suggested")
 
 type Suggestion struct {
@@ -38,9 +35,6 @@ type Config struct {
 	Bin   string
 	Model string
 
-	// Trace receives a line per survey event when set: the greps it runs and
-	// what it concludes. Without it a wrong suggestion is opaque, and the
-	// three reasons it could be wrong need three different fixes.
 	Trace io.Writer
 }
 
@@ -58,11 +52,8 @@ func (c Config) model() string {
 	return DefaultModel
 }
 
-// runner executes the survey and returns its stdout. Injected so parsing is
-// tested without spawning anything.
 type runner func(ctx context.Context, cfg Config, args []string) ([]byte, error)
 
-// Infer surveys the workspace and suggests the repositories a task touches.
 func Infer(ctx context.Context, cfg Config) ([]Suggestion, error) {
 	return infer(ctx, cfg, run)
 }
@@ -87,10 +78,6 @@ func infer(ctx context.Context, cfg Config, exec runner) ([]Suggestion, error) {
 	return parse(out)
 }
 
-// Args builds the claude argv.
-//
-// --tools is narrow but not empty: the survey has to read the workspace, and
-// every tool definition it will not use costs prompt tokens.
 func Args(cfg Config, repos []repo.Repo) []string {
 	format := []string{"--output-format", "json"}
 	if cfg.Trace != nil {
@@ -111,8 +98,7 @@ func Args(cfg Config, repos []repo.Repo) []string {
 	return append(args, format...)
 }
 
-// Env is the environment for the survey. Without CLAUDE_CODE_DISABLE_CLAUDE_MDS
-// an ambient CLAUDE.md in the workspace contaminates the answer.
+// Without this an ambient CLAUDE.md contaminates the answer.
 func Env() []string {
 	return append(os.Environ(), "CLAUDE_CODE_DISABLE_CLAUDE_MDS=1")
 }
@@ -144,7 +130,6 @@ func prompt(cfg Config, repos []repo.Repo) string {
 	return b.String()
 }
 
-// envelope is the subset of claude's --output-format json result we read.
 type envelope struct {
 	StructuredOutput *struct {
 		Repos []Suggestion `json:"repos"`
@@ -154,7 +139,6 @@ type envelope struct {
 	IsError bool   `json:"is_error"`
 }
 
-// event is the subset of a stream-json line we render.
 type event struct {
 	Type    string `json:"type"`
 	Subtype string `json:"subtype"`
@@ -168,8 +152,6 @@ type event struct {
 	} `json:"message"`
 }
 
-// render writes a readable line per interesting event. Raw stream-json is
-// unreadable, so tool calls and assistant text survive and the rest does not.
 func render(w io.Writer, line []byte) {
 	var e event
 	if err := json.Unmarshal(line, &e); err != nil {
@@ -196,7 +178,6 @@ func render(w io.Writer, line []byte) {
 	}
 }
 
-// compact renders tool input on one line, truncated.
 func compact(raw json.RawMessage) string {
 	s := strings.Join(strings.Fields(string(raw)), " ")
 	if len(s) > 160 {
@@ -205,17 +186,13 @@ func compact(raw json.RawMessage) string {
 	return s
 }
 
-// parse reads the envelope.
-//
-// The gate is structured_output, never is_error: when the model declines to
-// fill the schema the CLI still reports subtype success and is_error false,
-// and simply omits the key.
 func parse(out []byte) ([]Suggestion, error) {
 	env, err := envelopeFrom(out)
 	if err != nil {
 		return nil, err
 	}
 
+	// structured_output is the gate: a declining model still reports success.
 	if env.StructuredOutput != nil {
 		if len(env.StructuredOutput.Repos) == 0 {
 			return nil, ErrDeclined
@@ -223,7 +200,6 @@ func parse(out []byte) ([]Suggestion, error) {
 		return env.StructuredOutput.Repos, nil
 	}
 
-	// Documented but not guaranteed, so fall back to the raw result.
 	if repos, err := parseFenced(env.Result); err == nil && len(repos) > 0 {
 		return repos, nil
 	}
@@ -234,9 +210,6 @@ func parse(out []byte) ([]Suggestion, error) {
 	return nil, fmt.Errorf("%w: %s", ErrDeclined, strings.TrimSpace(env.Result))
 }
 
-// envelopeFrom reads either a single JSON object or the final result line of
-// an NDJSON stream. The stream's result line is identical to what
-// --output-format json returns, so only the framing differs.
 func envelopeFrom(out []byte) (envelope, error) {
 	var env envelope
 
@@ -267,7 +240,6 @@ func envelopeFrom(out []byte) (envelope, error) {
 	return env, nil
 }
 
-// parseFenced recovers JSON the model wrapped in a code fence.
 func parseFenced(s string) ([]Suggestion, error) {
 	s = strings.TrimSpace(s)
 	if fence := strings.Index(s, "```"); fence >= 0 {
@@ -310,8 +282,6 @@ func run(ctx context.Context, cfg Config, args []string) ([]byte, error) {
 	return stream(ctx, cmd, cfg.Trace)
 }
 
-// stream renders each event as it arrives and returns the whole stream for
-// parsing, so tracing changes what is shown and not what is read.
 func stream(ctx context.Context, cmd *exec.Cmd, trace io.Writer) ([]byte, error) {
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {

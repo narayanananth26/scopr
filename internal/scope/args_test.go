@@ -12,7 +12,6 @@ import (
 	"scopr/internal/scopefile"
 )
 
-// saved writes a scope into the fixture workspace.
 func saved(t *testing.T, root, name string, repos ...string) {
 	t.Helper()
 
@@ -21,7 +20,6 @@ func saved(t *testing.T, root, name string, repos ...string) {
 	}
 }
 
-// bases returns the resolved repos by base name, for readable assertions.
 func bases(s scope.Scope) []string {
 	out := make([]string, 0, len(s.Repos))
 	for _, r := range s.Repos {
@@ -43,7 +41,6 @@ func TestExpandsScopeInPlace(t *testing.T) {
 	}
 }
 
-// An expanded scope keeps its position, so the extra repo lands after it.
 func TestMixesScopesAndRepos(t *testing.T) {
 	root := fixture(t)
 	saved(t, root, "seam", "api", "shared")
@@ -105,8 +102,6 @@ func TestReportsAllBadScopes(t *testing.T) {
 	}
 }
 
-// Two scopes sharing a repo collide rather than merging: a silent union would
-// make the primary depend on which scope was listed first.
 func TestOverlappingScopesError(t *testing.T) {
 	root := fixture(t)
 	saved(t, root, "one", "api", "shared")
@@ -117,8 +112,6 @@ func TestOverlappingScopesError(t *testing.T) {
 	}
 }
 
-// A scope naming a repo that no longer exists must say which scope is stale,
-// not just which repo is missing.
 func TestStaleScopeNamesTheScope(t *testing.T) {
 	root := fixture(t)
 	saved(t, root, "stale", "api", "deleted-repo")
@@ -132,7 +125,6 @@ func TestStaleScopeNamesTheScope(t *testing.T) {
 	}
 }
 
-// A repo typed directly is not attributed to any scope.
 func TestDirectNameNotAttributed(t *testing.T) {
 	root := fixture(t)
 
@@ -151,8 +143,6 @@ func TestEmptyArgsErrors(t *testing.T) {
 	}
 }
 
-// Two scopes claiming one repo must name both scopes; "x and x are both /p"
-// reads as a bug rather than a collision.
 func TestOverlapNamesBothScopes(t *testing.T) {
 	root := fixture(t)
 	saved(t, root, "one", "api", "shared")

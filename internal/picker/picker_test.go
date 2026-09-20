@@ -26,7 +26,6 @@ func fixture(t *testing.T) string {
 	return root
 }
 
-// spy records what the editor was opened with.
 type spy struct {
 	chosen    []string
 	available []string
@@ -82,7 +81,6 @@ func TestOpensOnGivenScope(t *testing.T) {
 	}
 }
 
-// A scope name is not a repository, so it is expanded before editing.
 func TestExpandsScopeBeforeEditing(t *testing.T) {
 	root := fixture(t)
 	if err := scopefile.Save(root, "seam", []string{"services/api", "apps/web"}); err != nil {
@@ -148,7 +146,6 @@ func TestEmptyWorkspaceErrors(t *testing.T) {
 	}
 }
 
-// Notes and header reach the editor, so a suggestion shows why it was made.
 func TestCarriesNotesAndHeader(t *testing.T) {
 	root := fixture(t)
 	s := &spy{answer: []string{"services/api"}}

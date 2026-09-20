@@ -115,8 +115,6 @@ func TestAgentsJSONCarriesScopeText(t *testing.T) {
 	}
 }
 
-// Hand-built JSON breaks here. A repo name may contain a quote, and the
-// resulting flag value would be rejected by the CLI.
 func TestHandlesPathsNeedingEscaping(t *testing.T) {
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -147,8 +145,6 @@ func TestHandlesPathsNeedingEscaping(t *testing.T) {
 	}
 }
 
-// The primary is the working directory, not an additional repo. Listing it
-// under "also in scope" means the builder iterated Repos instead of Others.
 func TestDeclarationDoesNotListPrimaryAsAdditional(t *testing.T) {
 	root := fixture(t)
 

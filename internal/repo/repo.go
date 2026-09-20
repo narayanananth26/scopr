@@ -22,7 +22,6 @@ type Repo struct {
 	Path string
 }
 
-// AmbiguousError carries the candidates so callers need not parse the message.
 type AmbiguousError struct {
 	Name    string
 	Matches []Repo
@@ -42,9 +41,7 @@ func (e *AmbiguousError) Error() string {
 
 func (e *AmbiguousError) Unwrap() error { return ErrAmbiguous }
 
-// List returns every directory under root, sorted by path.
-// An unreadable directory fails the call. Skipping it would silently narrow
-// the scope.
+// An unreadable directory fails the call rather than silently narrowing the scope.
 func List(root string) ([]Repo, error) {
 	var repos []Repo
 
@@ -93,8 +90,6 @@ func List(root string) ([]Repo, error) {
 	return repos, nil
 }
 
-// Resolve scans root on every call. To resolve several names, List once and
-// use ResolveIn.
 func Resolve(root, name string) (string, error) {
 	repos, err := List(root)
 	if err != nil {
@@ -103,10 +98,6 @@ func Resolve(root, name string) (string, error) {
 	return ResolveIn(root, repos, name)
 }
 
-// ResolveIn maps a name to an absolute path against an existing listing. A
-// name containing a separator matches the path relative to root.
-//
-// Two matches is always an error.
 func ResolveIn(root string, repos []Repo, name string) (string, error) {
 	matches, err := match(root, repos, name)
 	if err != nil {
@@ -150,7 +141,6 @@ func match(root string, repos []Repo, name string) ([]Repo, error) {
 	return matches, nil
 }
 
-// depthFrom counts separators below root. Root is depth 0.
 func depthFrom(root, path string) (int, error) {
 	rel, err := filepath.Rel(root, path)
 	if err != nil {
@@ -159,7 +149,6 @@ func depthFrom(root, path string) (int, error) {
 	return len(strings.Split(rel, string(filepath.Separator))), nil
 }
 
-// hasGitDir reports whether dir is a repository root.
 func hasGitDir(dir string) (bool, error) {
 	_, err := os.Lstat(filepath.Join(dir, ".git"))
 	if err == nil {

@@ -46,8 +46,6 @@ func args(t *testing.T, cfg launch.Config) []string {
 	return got
 }
 
-// --add-dir is variadic, so a prompt after it is consumed as another directory
-// and never submitted.
 func TestPromptPrecedesVariadicFlags(t *testing.T) {
 	got := args(t, launch.Config{Scope: resolve(t, "api", "shared"), Prompt: "find the retry logic"})
 
@@ -92,7 +90,6 @@ func TestAddDirCoversEveryOtherRepo(t *testing.T) {
 	}
 }
 
-// The primary is the working directory, not an added one.
 func TestAddDirExcludesPrimary(t *testing.T) {
 	s := resolve(t, "api", "shared")
 	got := args(t, launch.Config{Scope: s})
@@ -109,8 +106,6 @@ func TestAddDirExcludesPrimary(t *testing.T) {
 	}
 }
 
-// Snapshotting defaults to on, which replays the scope a session was born with
-// on every resume.
 func TestAlwaysDisablesSnapshot(t *testing.T) {
 	for _, names := range [][]string{{"api"}, {"api", "shared"}} {
 		got := args(t, launch.Config{Scope: resolve(t, names...)})

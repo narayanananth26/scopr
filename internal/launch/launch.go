@@ -10,7 +10,6 @@ import (
 	"scopr/internal/scope"
 )
 
-// executable launched when Config.Bin is empty.
 const DefaultBin = "claude"
 
 type Config struct {
@@ -18,8 +17,6 @@ type Config struct {
 	Prompt string
 	Bin    string
 
-	// Name labels the terminal tab. Empty falls back to the prompt, then to
-	// the repositories.
 	Name string
 }
 
@@ -30,11 +27,6 @@ func (c Config) bin() string {
 	return DefaultBin
 }
 
-// Args builds the claude argv.
-//
-// The prompt comes first then --add-dir.
-// --system-prompt-snapshot off stops a resumed session from
-// replaying the scope it was born with.
 func Args(cfg Config) ([]string, error) {
 	if len(cfg.Scope.Repos) == 0 {
 		return nil, errors.New("launch: empty scope")
@@ -63,23 +55,19 @@ func Args(cfg Config) ([]string, error) {
 	args = append(args,
 		"--append-system-prompt", declaration,
 		"--agents", agents,
+		// Stops a resumed session replaying the scope it was born with.
 		"--system-prompt-snapshot", "off",
 	)
 
 	return args, nil
 }
 
-// Run starts claude in the primary repo and waits, returning its exit code.
-//
-// It spawns rather than execs so a caller can act once the session ends.
 func Run(cfg Config) (int, error) {
 	args, err := Args(cfg)
 	if err != nil {
 		return 0, err
 	}
 
-	// Under tmux the window carries the label; elsewhere the scope travels in
-	// the environment for a status line to show.
 	if InTmux() {
 		name, auto := tmuxWindow()
 		_ = tmuxTitle(Title(cfg.Name, cfg.Prompt, cfg.Scope))
@@ -106,12 +94,6 @@ func Run(cfg Config) (int, error) {
 	return 0, nil
 }
 
-// Env is the session's environment, carrying the scope so a status line or
-// anything else inside the session can show it.
-//
-// Exported rather than injected through --settings: a status line the person
-// already configured stays theirs, and scopr does not have to reason about
-// whether --settings replaces the rest of their settings.
 func Env(cfg Config) []string {
 	names := make([]string, 0, len(cfg.Scope.Repos))
 	for _, r := range cfg.Scope.Repos {

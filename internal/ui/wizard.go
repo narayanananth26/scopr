@@ -13,10 +13,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// scopePrefix marks a saved scope in display only; scope owns the real one.
 const scopePrefix = "@"
 
-// step is which screen the wizard is on.
 type step int
 
 const (
@@ -27,52 +25,33 @@ const (
 	stepDone
 )
 
-// Space is a workspace to work in.
 type Space struct {
 	Name string
 	Root string
 }
 
-// Entry is a saved scope the name step can start from.
 type Entry struct {
-	// Root is the workspace holding it.
 	Root string
 
-	// Scope is the saved scope's name.
 	Scope string
 
-	// Repos is what it holds, for showing beside it.
 	Repos []string
 }
 
-// Wizard walks name, then scope, then prompt.
-//
-// The name step is where the workspace is chosen: every entry names one, so
-// picking a scope picks its workspace too. Typing a name that matches nothing
-// offers to create it, once per workspace, so the ambiguity is visible rather
-// than guessed at.
 type Wizard struct {
-	// Spaces are the workspaces to choose between, the one you are standing
-	// in first.
 	Spaces []Space
 
-	// Entries are the saved scopes across all of them.
 	Entries []Entry
 
-	// Load returns the repositories a saved scope holds.
 	Load func(root, name string) ([]string, error)
 
-	// ReposIn returns every repository in a workspace.
 	ReposIn func(root string) []string
 
-	// LoadFiles reads the taggable files for a scope
 	LoadFiles func(root string, names []string) []files.File
 
-	// Files are the taggable paths, once read.
 	Files []files.File
 
-	// filesLoaded separates "not read yet" from "read, and there are none",
-	// which an empty slice cannot.
+	// Separates "not read yet" from "read, and there are none".
 	filesLoaded bool
 
 	step   step
@@ -82,8 +61,6 @@ type Wizard struct {
 	wsAt  int
 	width int
 
-	// space is the workspace chosen at the first step; chosen is the scope
-	// chosen at the second, empty when starting fresh.
 	space  Space
 	chosen Entry
 
@@ -91,8 +68,6 @@ type Wizard struct {
 	scope    Model
 	promptAt int
 
-	// editing asks the update loop to hand the prompt to an external editor.
-	// key is pure, so it cannot spawn a process itself.
 	editing bool
 
 	tagging   bool
@@ -101,7 +76,6 @@ type Wizard struct {
 	tagTail   string
 	tagCursor int
 
-	// Err is set when a saved scope could not be loaded.
 	Err error
 
 	Cancelled bool
@@ -115,7 +89,6 @@ func NewWizard(spaces []Space, entries []Entry, load func(root, name string) ([]
 		ReposIn: repos,
 	}
 
-	// One workspace is not a choice.
 	if len(spaces) == 1 {
 		w.space = spaces[0]
 		w.step = stepName
@@ -123,8 +96,6 @@ func NewWizard(spaces []Space, entries []Entry, load func(root, name string) ([]
 	return w
 }
 
-// matchesName are the chosen workspace's scopes the typed name selects, plus a
-// create entry when the name matches none of them.
 func (w Wizard) matchesName() []Entry {
 	q := strings.ToLower(strings.TrimSpace(w.name))
 
@@ -138,14 +109,10 @@ func (w Wizard) matchesName() []Entry {
 		}
 	}
 
-	// An unnamed session is still a session: without this, a blank name and
-	// enter would load the first saved scope instead of starting fresh.
 	if q == "" {
 		return append(hits, Entry{Root: w.space.Root})
 	}
 
-	// A name that cannot be saved must not be offered: the wizard would run
-	// to the end and fail at the write.
 	if scopefile.ValidName(strings.TrimSpace(w.name)) != nil {
 		return hits
 	}
@@ -156,8 +123,6 @@ func (w Wizard) matchesName() []Entry {
 	return hits
 }
 
-// Name is the scope name to save under, empty when nothing should be written:
-// an existing scope needs no saving, and a workspace entry names nothing.
 func (w Wizard) Name() string {
 	if w.chosen.Scope == "" || w.existingScope() {
 		return ""
@@ -165,24 +130,16 @@ func (w Wizard) Name() string {
 	return w.chosen.Scope
 }
 
-// Root is the workspace the session belongs to.
 func (w Wizard) Root() string { return w.space.Root }
 
-// Label is what the session was called, whether or not it is saved. A name is
-// useful for the terminal tab even when nothing is written.
 func (w Wizard) Label() string { return w.chosen.Scope }
 
-// Repos is the chosen scope.
 func (w Wizard) Repos() []string { return w.scope.Result() }
 
-// Prompt is the task to submit on start, empty when none was given.
 func (w Wizard) Prompt() string { return strings.TrimSpace(w.prompt) }
 
-// Done reports that the wizard finished and a session should start.
 func (w Wizard) Done() bool { return w.step == stepDone && !w.Cancelled }
 
-// existingScope reports whether the chosen entry is a scope that already
-// exists, rather than one about to be created.
 func (w Wizard) existingScope() bool {
 	for _, e := range w.Entries {
 		if e.Root == w.space.Root && e.Scope != "" && e.Scope == w.chosen.Scope {
@@ -192,7 +149,6 @@ func (w Wizard) existingScope() bool {
 	return false
 }
 
-// Key applies one keystroke.
 func (w Wizard) Key(k string) Wizard {
 	switch w.step {
 	case stepWorkspace:
@@ -285,8 +241,7 @@ func (w Wizard) keyName(k string) Wizard {
 	default:
 		if len([]rune(k)) == 1 {
 			w.name += k
-			// Typing reorders the list, so a held cursor would point at a
-			// different entry than the one under it a moment ago.
+
 			w.nameAt = 0
 		}
 	}
@@ -295,8 +250,6 @@ func (w Wizard) keyName(k string) Wizard {
 }
 
 func (w Wizard) keyScope(k string) Wizard {
-	// Escaping the scope step goes back to the name rather than out, so a
-	// mistyped name is one keystroke to fix.
 	if k == "esc" && w.scope.mode == modeScope {
 		w.step = stepName
 		return w
@@ -314,11 +267,8 @@ func (w Wizard) keyScope(k string) Wizard {
 	return w
 }
 
-// fileLimit is how many matches the tag list shows. More than a screenful is
-// a reason to type another character, not to scroll.
 const fileLimit = 10
 
-// matches are the files the current tag query selects.
 func (w Wizard) matches() []files.File {
 	return files.Match(w.Files, w.query, fileLimit)
 }
@@ -329,7 +279,7 @@ func (w Wizard) keyTag(k string) Wizard {
 		w.Cancelled = true
 
 	case "esc":
-		// Drop the @ too, so escaping leaves no half-typed tag.
+
 		w = w.endTag("")
 
 	case "up", "ctrl+p":
@@ -354,13 +304,12 @@ func (w Wizard) keyTag(k string) Wizard {
 			return w.endTag("")
 		}
 		w.query = w.query[:len(w.query)-1]
-		// A narrower query reorders the list, so a held cursor would point
-		// at a different file than the one under it a moment ago.
+
 		w.tagCursor = 0
 		w = w.redrawTag()
 
 	case " ":
-		// A space ends a tag nobody completed.
+
 		w = w.endTag("@" + w.query + " ")
 
 	default:
@@ -374,14 +323,12 @@ func (w Wizard) keyTag(k string) Wizard {
 	return w
 }
 
-// redrawTag rewrites the prompt around the tag being typed.
 func (w Wizard) redrawTag() Wizard {
 	w.prompt = w.tagHead + "@" + w.query + w.tagTail
 	w.promptAt = len([]rune(w.tagHead)) + 1 + len([]rune(w.query))
 	return w
 }
 
-// endTag closes tag mode, putting inserted in place of what was typed.
 func (w Wizard) endTag(inserted string) Wizard {
 	w.prompt = w.tagHead + inserted + w.tagTail
 	w.promptAt = len([]rune(w.tagHead)) + len([]rune(inserted))
@@ -391,7 +338,6 @@ func (w Wizard) endTag(inserted string) Wizard {
 	return w
 }
 
-// insertPrompt puts s at the cursor.
 func (w Wizard) insertPrompt(s string) Wizard {
 	r := []rune(w.prompt)
 	at := min(w.promptAt, len(r))
@@ -420,7 +366,7 @@ func (w Wizard) keyPrompt(k string) Wizard {
 	case "enter":
 		w.step = stepDone
 
-	// ctrl+e is end-of-line, so the editor gets ctrl+o: open.
+	// ctrl+e is end-of-line, so the editor gets ctrl+o.
 	case "ctrl+o":
 		w.editing = true
 
@@ -475,7 +421,6 @@ func (w Wizard) keyPrompt(k string) Wizard {
 	return w
 }
 
-// promptLine renders the prompt with the cursor in place.
 func (w Wizard) promptLine() string {
 	r := []rune(w.prompt)
 	at := min(w.promptAt, len(r))
@@ -564,7 +509,6 @@ func (w Wizard) viewName() string {
 		}
 	}
 
-	// Scopes are written @name everywhere else, so they read that way here.
 	width := len("(unnamed)")
 	for _, e := range hits {
 		if e.Scope != "" {
@@ -649,10 +593,8 @@ func (w Wizard) viewTag() string {
 	return b.String()
 }
 
-// FilesMsg carries the taggable files once they have been read.
 type FilesMsg []files.File
 
-// loadCmd reads the taggable files off the update loop.
 func (w Wizard) loadCmd() tea.Cmd {
 	if w.LoadFiles == nil {
 		return nil
@@ -662,10 +604,8 @@ func (w Wizard) loadCmd() tea.Cmd {
 	return func() tea.Msg { return FilesMsg(w.LoadFiles(root, repos)) }
 }
 
-// Init satisfies tea.Model.
 func (w Wizard) Init() tea.Cmd { return nil }
 
-// Update satisfies tea.Model.
 func (w Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if size, ok := msg.(tea.WindowSizeMsg); ok {
 		w.width = size.Width
@@ -707,8 +647,6 @@ func (w Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return w, editExternally(w.prompt)
 	}
 
-	// The scope is settled on entering the prompt, so that is when the file
-	// list can be read.
 	if before == stepScope && w.step == stepPrompt && !w.filesLoaded {
 		return w, w.loadCmd()
 	}
@@ -717,7 +655,6 @@ func (w Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (w Wizard) View() string { return w.view() }
 
-// RunWizard walks name, scope and prompt, and reports what was chosen.
 func RunWizard(w Wizard) (Wizard, error) {
 	out, err := tea.NewProgram(w, tea.WithOutput(os.Stderr), tea.WithAltScreen()).Run()
 	if err != nil {

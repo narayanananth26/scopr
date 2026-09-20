@@ -13,7 +13,6 @@ func editor() Model {
 	)
 }
 
-// press applies keystrokes in order.
 func press(m Model, keys ...string) Model {
 	for _, k := range keys {
 		m = m.key(k)
@@ -37,7 +36,6 @@ func TestRemoveDropsUnderCursor(t *testing.T) {
 	}
 }
 
-// Removing the last entry must not leave the cursor past the end.
 func TestRemoveLastKeepsCursorValid(t *testing.T) {
 	m := press(editor(), "j", "x")
 
@@ -57,7 +55,6 @@ func TestRemoveEverythingThenEnterDoesNotStart(t *testing.T) {
 	}
 }
 
-// Reordering is how the primary is chosen: the first entry becomes cwd.
 func TestReorderPromotesToPrimary(t *testing.T) {
 	m := press(editor(), "j", "K")
 
@@ -100,7 +97,6 @@ func TestAddAppendsChoice(t *testing.T) {
 	}
 }
 
-// Offering a repo already in scope would let it be added twice.
 func TestAddExcludesChosen(t *testing.T) {
 	m := press(editor(), "a")
 
@@ -178,7 +174,6 @@ func TestEscapeCancels(t *testing.T) {
 	}
 }
 
-// Editing must not write through to the caller's slice.
 func TestDoesNotMutateInput(t *testing.T) {
 	chosen := []string{"services/api", "apps/web"}
 	available := []string{"apps/web", "services/api"}
@@ -211,7 +206,6 @@ func TestViewShowsCandidatesInAddMode(t *testing.T) {
 	}
 }
 
-// A suggestion's reason belongs beside its repo, not printed above the list.
 func TestViewShowsNotes(t *testing.T) {
 	m := editor()
 	m.Notes = map[string]string{
@@ -255,7 +249,6 @@ func TestViewShowsHeader(t *testing.T) {
 	}
 }
 
-// A repo added by hand has no note, and must still render.
 func TestViewWithoutNotes(t *testing.T) {
 	got := editor().View()
 

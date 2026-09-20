@@ -6,16 +6,8 @@ import (
 	"strings"
 )
 
-// AgentName is the subagent type injected via --agents. The declaration tells
-// the session to prefer it, since --append-system-prompt does not reach
-// subagents.
 const AgentName = "scoped"
 
-// Declaration is the text passed to --append-system-prompt.
-//
-// Written as project documentation rather than as a directive block: a scope
-// phrased as an instruction with a challenge token is refused as prompt
-// injection.
 func Declaration(s Scope) string {
 	var b strings.Builder
 
@@ -49,9 +41,6 @@ type agentDef struct {
 	Prompt      string `json:"prompt"`
 }
 
-// AgentsJSON is the value passed to --agents. It defines one agent carrying
-// the same scope text, because --append-system-prompt is not inherited by
-// subagents.
 func AgentsJSON(s Scope) (string, error) {
 	agents := map[string]agentDef{
 		AgentName: {

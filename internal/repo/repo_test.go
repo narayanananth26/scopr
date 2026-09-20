@@ -11,18 +11,6 @@ import (
 	"scopr/internal/repo"
 )
 
-// fixture builds a workspace covering every traversal rule and returns its
-// root with symlinks resolved. macOS hands back /var/folders paths that resolve
-// to /private/var, and List reports the resolved spelling.
-//
-//	apps/web/.git/      repo, with node_modules below it
-//	apps/shared/.git/   repo
-//	services/api/.git/  repo
-//	worktrees/web/.git  repo; .git is a FILE, as in a worktree
-//	worktrees/web/src   must stay unlisted
-//	docs/a/b/c/d/e      no .git, deeper than maxDepth
-//	Some Folder/        spaces, no .git
-//	.scopr/             dotted, never listed
 func fixture(t *testing.T) string {
 	t.Helper()
 
@@ -47,7 +35,6 @@ func fixture(t *testing.T) string {
 		}
 	}
 
-	// A worktree keeps .git as a file holding a gitdir pointer.
 	gitFile := filepath.Join(root, "worktrees/web/.git")
 	if err := os.WriteFile(gitFile, []byte("gitdir: /elsewhere\n"), 0o644); err != nil {
 		t.Fatalf("write %s: %v", gitFile, err)
@@ -56,7 +43,6 @@ func fixture(t *testing.T) string {
 	return root
 }
 
-// rels returns listed paths relative to root, for readable assertions.
 func rels(t *testing.T, root string, repos []repo.Repo) []string {
 	t.Helper()
 
@@ -125,8 +111,6 @@ func TestDoesNotDescendIntoRepos(t *testing.T) {
 	}
 }
 
-// A worktree's .git is a file, not a directory. Testing IsDir here would miss
-// it and walk the whole checkout.
 func TestTreatsGitFileAsRepo(t *testing.T) {
 	root := fixture(t)
 	got := listRels(t, root)
@@ -141,7 +125,6 @@ func TestTreatsGitFileAsRepo(t *testing.T) {
 	}
 }
 
-// Root is depth 0, so docs/a/b/c is depth 4 and is listed but not opened.
 func TestRespectsDepthCap(t *testing.T) {
 	root := fixture(t)
 	got := listRels(t, root)
@@ -220,8 +203,6 @@ func TestResolveUnknownName(t *testing.T) {
 	}
 }
 
-// ResolveIn must use the listing it is given, so a caller resolving several
-// names walks the tree once.
 func TestResolveInUsesGivenListing(t *testing.T) {
 	root := filepath.Join(string(filepath.Separator), "nonexistent-root")
 	repos := []repo.Repo{

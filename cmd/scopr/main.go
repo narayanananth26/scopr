@@ -23,8 +23,6 @@ import (
 	"scopr/internal/ui"
 )
 
-// findRoot returns the workspace a command should act on: --workspace, then
-// the one it was run in, then the only registered one.
 func findRoot(g globals) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -33,9 +31,6 @@ func findRoot(g globals) (string, error) {
 	return resolve.One(resolve.Options{Workspace: g.workspace, Cwd: cwd})
 }
 
-// findScopeRoot returns the workspace holding a named scope. Standing in a
-// workspace that has it wins; otherwise every registered one is searched, and
-// more than one hit is reported rather than guessed between.
 func findScopeRoot(g globals, name string) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -58,7 +53,6 @@ func findScopeRoot(g globals, name string) (string, error) {
 	return hits[0].Workspace.Path, nil
 }
 
-// runWhere prints the workspace root. The path goes to stdout alone.
 func runWhere(g globals) int {
 	root, err := findRoot(g)
 	if err != nil {
@@ -98,8 +92,6 @@ func runList(g globals) int {
 	return 0
 }
 
-// runSave stores a scope after checking every repository resolves, so a saved
-// scope is one that can actually launch.
 func runSave(g globals, name string, args []string) int {
 	root, err := findRoot(g)
 	if err != nil {
@@ -163,15 +155,8 @@ func runRename(g globals, args []string) int {
 	return 0
 }
 
-// surveyTimeout is generous: the survey runs 15-30 seconds with an observed
-// 21-second tail.
 const surveyTimeout = 90 * time.Second
 
-// runWizard walks name, scope and prompt, then starts the session. A new name
-// saves the scope once it is known to resolve.
-//
-// This is what bare scopr does. The name step is one Enter to skip, and it
-// buys a label and a prompt that a bare picker had nowhere to put.
 func runWizard(g globals) int {
 	spaces, entries, err := wizardEntries(g)
 	if err != nil {
@@ -208,8 +193,6 @@ func runWizard(g globals) int {
 	root := w.Root()
 	repos := w.Repos()
 
-	// Save only after the scope is known to resolve, so a saved scope is one
-	// that can launch.
 	if name := w.Name(); name != "" {
 		if _, err := scope.Resolve(root, repos); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -226,8 +209,6 @@ func runWizard(g globals) int {
 	return launchIn(g, root, repos, w.Label())
 }
 
-// wizardEntries is the workspaces to choose between and the scopes they hold,
-// with the one you are standing in first.
 func wizardEntries(g globals) ([]ui.Space, []ui.Entry, error) {
 	var roots []string
 
@@ -275,7 +256,6 @@ func wizardEntries(g globals) ([]ui.Space, []ui.Entry, error) {
 	return spaces, entries, nil
 }
 
-// taggableFiles reads the files a scope can tag, for the prompt step.
 func taggableFiles(root string, names []string) []files.File {
 	s, err := scope.Resolve(root, names)
 	if err != nil {
@@ -297,7 +277,6 @@ func taggableFiles(root string, names []string) []files.File {
 	return out
 }
 
-// launchIn starts a session in an already-resolved workspace.
 func launchIn(g globals, root string, args []string, name string) int {
 	s, err := scope.ResolveArgs(root, args)
 	if err != nil {
@@ -313,8 +292,6 @@ func launchIn(g globals, root string, args []string, name string) int {
 	return code
 }
 
-// launchRoot picks the workspace to launch in. The first @name among the
-// arguments locates it; otherwise the usual resolution applies.
 func launchRoot(g globals, args []string) (string, error) {
 	for _, a := range args {
 		if name, ok := strings.CutPrefix(a, scope.Prefix); ok {
@@ -324,11 +301,7 @@ func launchRoot(g globals, args []string) (string, error) {
 	return findRoot(g)
 }
 
-// runLaunch resolves names to a scope and starts a session in the primary
-// repo, returning claude's exit code.
 func runLaunch(g globals, args []string, name string) int {
-	// A named scope says which workspace to use, so scopr @surfaces works
-	// from anywhere. Plain repository names do not, and resolve as usual.
 	root, err := launchRoot(g, args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -337,8 +310,6 @@ func runLaunch(g globals, args []string, name string) int {
 	return launchIn(g, root, args, name)
 }
 
-// runInfer surveys the workspace for a task, shows what it found, and starts a
-// session once approved.
 func runInfer(g globals, task string) int {
 	root, err := findRoot(g)
 	if err != nil {
@@ -377,7 +348,7 @@ func runInfer(g globals, task string) int {
 		}
 
 	case errors.Is(err, dispatch.ErrDeclined):
-		// Nothing found is not a failure; open the editor empty.
+
 		scoped.Header = "nothing suggested - " + err.Error()
 
 	default:
@@ -400,8 +371,6 @@ func runInfer(g globals, task string) int {
 	return launchIn(g, root, args, task)
 }
 
-// label names a session from its arguments: a saved scope names itself, a
-// list of repositories does not.
 func label(args []string) string {
 	if len(args) == 1 && strings.HasPrefix(args[0], scope.Prefix) {
 		return strings.TrimPrefix(args[0], scope.Prefix)
@@ -409,7 +378,6 @@ func label(args []string) string {
 	return ""
 }
 
-// runWorkspace handles the workspace verbs.
 func runWorkspace(args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "usage: scopr workspace add|list|remove")
@@ -456,8 +424,6 @@ func runWorkspaceAdd(path string) int {
 	return 0
 }
 
-// runWorkspaceList prints name and path. Stale entries are shown rather than
-// hidden, so a workspace that moved is visible instead of quietly absent.
 func runWorkspaceList() int {
 	all, err := registry.List()
 	if err != nil {
@@ -484,11 +450,9 @@ func runWorkspaceList() int {
 	return 0
 }
 
-// runWorkspaceRemove forgets a workspace. Its scopes stay on disk.
 func runWorkspaceRemove(query string) int {
 	matches, err := registry.Lookup(query)
 
-	// A stale entry cannot be looked up, so fall back to removing by path.
 	if err != nil {
 		abs, absErr := filepath.Abs(query)
 		if absErr == nil {
@@ -521,8 +485,6 @@ func runWorkspaceRemove(query string) int {
 	return 0
 }
 
-// verbs are reserved: a repository sharing one of these names must be given
-// as a path, such as frontend/list.
 var verbs = []string{"infer", "save", "list", "rename", "delete", "where", "workspace"}
 
 func usage() {
@@ -553,15 +515,12 @@ plain repositories can be mixed.
 `)
 }
 
-// globals are the flags every verb shares. Parsing them separately is what
-// lets a verb take its own flags after its arguments.
 type globals struct {
 	workspace string
 	prompt    string
 	verbose   bool
 }
 
-// parseGlobals reads the flags before the verb and returns what is left.
 func parseGlobals(argv []string) (globals, []string, error) {
 	fs := flag.NewFlagSet("scopr", flag.ContinueOnError)
 	fs.Usage = usage
@@ -577,16 +536,12 @@ func parseGlobals(argv []string) (globals, []string, error) {
 	return g, fs.Args(), nil
 }
 
-// verbFlags parses flags appearing after a verb's arguments, so
-// scopr save surfaces gl-panel -p x works.
 func verbFlags(name string, args []string, g *globals) ([]string, error) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.Usage = usage
 	fs.StringVar(&g.prompt, "p", g.prompt, "prompt to submit on start")
 	fs.BoolVar(&g.verbose, "verbose", g.verbose, "show the survey's tool calls")
 
-	// Positionals first, then any flags: flag stops at the first non-flag
-	// argument, so the two are separated before parsing.
 	var positional, flags []string
 	for i, a := range args {
 		if strings.HasPrefix(a, "-") {
@@ -614,8 +569,6 @@ func run(argv []string) int {
 
 	verb := args[0]
 
-	// Launching is not a verb, but it takes flags after its arguments too:
-	// scopr gl-panel -p "..." should work.
 	if !slices.Contains(verbs, verb) {
 		names, err := verbFlags("scopr", args, &g)
 		if err != nil {

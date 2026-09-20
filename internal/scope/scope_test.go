@@ -11,13 +11,6 @@ import (
 	"scopr/internal/scope"
 )
 
-// fixture mirrors internal/repo's: web appears in two containers so it is
-// ambiguous, api is unique.
-//
-//	apps/web/.git/      repo
-//	apps/shared/.git/   repo
-//	services/api/.git/  repo
-//	worktrees/web/.git/ repo
 func fixture(t *testing.T) string {
 	t.Helper()
 
@@ -57,8 +50,6 @@ func TestResolvesSingleRepo(t *testing.T) {
 	}
 }
 
-// Order is not cosmetic: the first repo becomes cwd and decides whose config
-// loads.
 func TestPreservesArgumentOrder(t *testing.T) {
 	root := fixture(t)
 
@@ -102,8 +93,6 @@ func TestUnknownNameErrors(t *testing.T) {
 	}
 }
 
-// One run reports every bad name. Failing on the first means fixing typos one
-// rerun at a time.
 func TestReportsAllBadNames(t *testing.T) {
 	root := fixture(t)
 
@@ -134,7 +123,6 @@ func TestDuplicateNameErrors(t *testing.T) {
 	}
 }
 
-// The same repo reached by two spellings is still one repo.
 func TestDuplicateByDifferentSpellingErrors(t *testing.T) {
 	root := fixture(t)
 
@@ -144,9 +132,6 @@ func TestDuplicateByDifferentSpellingErrors(t *testing.T) {
 	}
 }
 
-// A partial scope is never returned. Silently dropping the bad name would give
-// a session scoped to less than was asked for, which surfaces as the agent
-// failing to find code rather than as a scoping error.
 func TestMixedGoodAndBadErrors(t *testing.T) {
 	root := fixture(t)
 
@@ -171,7 +156,6 @@ func TestDisambiguatesByRelativePath(t *testing.T) {
 	}
 }
 
-// Name keeps repo.List's meaning, the base name, whatever spelling was typed.
 func TestNameIsTheBaseName(t *testing.T) {
 	root := fixture(t)
 

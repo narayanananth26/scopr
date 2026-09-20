@@ -52,7 +52,6 @@ func type_(w Wizard, s string) Wizard {
 	return w
 }
 
-// pick chooses a workspace by name, then continues.
 func pick(w Wizard, name string) Wizard {
 	for i, sp := range w.Spaces {
 		if sp.Name == name {
@@ -86,7 +85,6 @@ func TestWizardWorkspaceStepCountsScopes(t *testing.T) {
 	}
 }
 
-// One workspace is not a choice.
 func TestWizardSkipsWorkspaceStepWhenThereIsOne(t *testing.T) {
 	w := NewWizard(
 		[]Space{{Name: "Only", Root: "/w/only"}},
@@ -135,7 +133,6 @@ func TestWizardPickingAScopeLoadsIt(t *testing.T) {
 	}
 }
 
-// A blank name starts fresh rather than loading the first saved scope.
 func TestWizardUnnamedStartsFresh(t *testing.T) {
 	w := pick(wizard(), "scopr")
 
@@ -171,7 +168,6 @@ func TestWizardNewNameSavesInThatWorkspace(t *testing.T) {
 	}
 }
 
-// Escaping the name step goes back to the workspace, not out.
 func TestWizardNameEscapeGoesBackToWorkspace(t *testing.T) {
 	w := pick(wizard(), "scopr").Key("esc")
 
@@ -183,7 +179,6 @@ func TestWizardNameEscapeGoesBackToWorkspace(t *testing.T) {
 	}
 }
 
-// With one workspace there is nowhere back to, so escape cancels.
 func TestWizardNameEscapeCancelsWithOneWorkspace(t *testing.T) {
 	w := NewWizard(
 		[]Space{{Name: "Only", Root: "/w/only"}},
@@ -210,7 +205,6 @@ func TestWizardCursorMoves(t *testing.T) {
 	}
 }
 
-// Typing reorders the list, so a held cursor would point somewhere else.
 func TestWizardCursorResetsOnTyping(t *testing.T) {
 	w := pick(wizard(), "Goodlife").Key("down").Key("s")
 
@@ -242,7 +236,7 @@ func TestWizardLoadFailureStaysOnName(t *testing.T) {
 
 func TestWizardWalksToPrompt(t *testing.T) {
 	w := type_(pick(wizard(), "Goodlife"), "surfaces").Key("enter")
-	w = w.Key("enter") // accept the scope
+	w = w.Key("enter")
 
 	if w.step != stepPrompt {
 		t.Fatalf("step = %v, want the prompt step", w.step)
@@ -280,7 +274,6 @@ func TestWizardFinishesWithoutPrompt(t *testing.T) {
 	}
 }
 
-// Escape goes back a step rather than out, so a mistyped name costs one key.
 func TestWizardEscapeGoesBack(t *testing.T) {
 	w := type_(pick(wizard(), "Goodlife"), "surfaces").Key("enter")
 
@@ -299,7 +292,6 @@ func TestWizardEscapeGoesBack(t *testing.T) {
 	}
 }
 
-// Escaping back into the scope step must not immediately finish again.
 func TestWizardBackFromPromptCanEditAgain(t *testing.T) {
 	w := type_(pick(wizard(), "Goodlife"), "surfaces").Key("enter")
 	w = w.Key("enter").Key("esc")
@@ -329,7 +321,6 @@ func TestWizardCancelsFromScope(t *testing.T) {
 	}
 }
 
-// An empty scope must not start a session, however it was reached.
 func TestWizardEmptyScopeCannotFinish(t *testing.T) {
 	w := type_(pick(wizard(), "Goodlife"), "surfaces").Key("enter")
 	w = w.Key("x").Key("x").Key("enter")
@@ -370,7 +361,6 @@ func TestTagFiltersAsYouType(t *testing.T) {
 	}
 }
 
-// The tag lands in the prompt text, which is what claude parses.
 func TestTagInsertsPath(t *testing.T) {
 	w := type_(tagging(), "look at ")
 	w = type_(w.Key("@"), "checkout").Key("enter")
@@ -391,7 +381,6 @@ func TestTagTabInserts(t *testing.T) {
 	}
 }
 
-// Escaping must leave no half-typed tag behind.
 func TestTagEscapeDropsTheAt(t *testing.T) {
 	w := type_(tagging(), "look at ")
 	w = type_(w.Key("@"), "check").Key("esc")
@@ -404,7 +393,6 @@ func TestTagEscapeDropsTheAt(t *testing.T) {
 	}
 }
 
-// Backspacing off the @ leaves tag mode, rather than trapping you in it.
 func TestTagBackspaceOffTheAtExits(t *testing.T) {
 	w := tagging().Key("@").Key("backspace")
 
@@ -427,7 +415,6 @@ func TestTagBackspaceNarrowsQuery(t *testing.T) {
 	}
 }
 
-// A space ends a tag nobody completed, rather than swallowing it.
 func TestTagSpaceEndsTagging(t *testing.T) {
 	w := type_(tagging().Key("@"), "zzz").Key(" ")
 
@@ -450,7 +437,6 @@ func TestTagWithNoMatchesInsertsNothing(t *testing.T) {
 	}
 }
 
-// Files load in the background, so the list must say so rather than look empty.
 func TestTagSaysWhenStillLoading(t *testing.T) {
 	w := type_(pick(wizard(), "Goodlife"), "surfaces").Key("enter").Key("enter").Key("@")
 
@@ -516,7 +502,6 @@ func TestTagCtrlNAndPMove(t *testing.T) {
 	}
 }
 
-// Typing reorders the list, so a held cursor would point somewhere else.
 func TestTagCursorResetsOnQueryChange(t *testing.T) {
 	w := tagging().Key("@").Key("down")
 	if w.tagCursor != 1 {
@@ -545,8 +530,6 @@ func TestTagViewMarksTheCursor(t *testing.T) {
 	}
 }
 
-// A label is useful for the terminal tab even when nothing is saved, so Label
-// reports the chosen scope where Name deliberately does not.
 func TestWizardLabelIsTheChosenScope(t *testing.T) {
 	w := type_(pick(wizard(), "Goodlife"), "surfaces").Key("enter")
 
@@ -561,7 +544,6 @@ func TestWizardLabelIsTheChosenScope(t *testing.T) {
 func TestWizardLabelEmptyWhenUnnamed(t *testing.T) {
 	w := pick(wizard(), "Goodlife")
 
-	// The unnamed entry is last, after the saved scopes.
 	for range len(w.matchesName()) - 1 {
 		w = w.Key("down")
 	}
@@ -572,8 +554,6 @@ func TestWizardLabelEmptyWhenUnnamed(t *testing.T) {
 	}
 }
 
-// A name scopefile.Save would reject must not be offered: the wizard would run
-// to the end and fail at the write.
 func TestWizardDoesNotOfferUnsaveableNames(t *testing.T) {
 	for _, bad := range []string{"../../escape", "a/b", ".hidden", ".."} {
 		w := type_(pick(wizard(), "Goodlife"), bad)
@@ -598,7 +578,6 @@ func TestWizardExplainsAnUnsaveableName(t *testing.T) {
 	}
 }
 
-// Enter on a refused name must not advance with nothing chosen.
 func TestWizardRefusedNameCannotContinue(t *testing.T) {
 	w := type_(pick(wizard(), "Goodlife"), "../../escape").Key("enter")
 
@@ -624,7 +603,6 @@ func TestWizardStillOffersValidNames(t *testing.T) {
 	}
 }
 
-// Scopes are written @name everywhere else, so the name step matches.
 func TestWizardNameStepShowsTheAtPrefix(t *testing.T) {
 	got := pick(wizard(), "Goodlife").View()
 
@@ -646,7 +624,6 @@ func TestWizardNameStepPrefixesWhatYouType(t *testing.T) {
 	}
 }
 
-// The @ is decoration: it must not end up in the saved name.
 func TestWizardNameDoesNotIncludeThePrefix(t *testing.T) {
 	w := type_(pick(wizard(), "Goodlife"), "checkout").Key("enter")
 
@@ -703,7 +680,6 @@ func TestPromptCursorStopsAtEdges(t *testing.T) {
 	}
 }
 
-// Typing mid-string must insert, not append.
 func TestPromptInsertsAtCursor(t *testing.T) {
 	w := type_(atPrompt(t), "ac").Key("left")
 	w = w.Key("b")
@@ -758,7 +734,6 @@ func TestPromptKillLineBothWays(t *testing.T) {
 	}
 }
 
-// Multibyte text must not be cut apart.
 func TestPromptHandlesMultibyte(t *testing.T) {
 	w := type_(atPrompt(t), "héllo").Key("left").Key("backspace")
 
@@ -767,7 +742,6 @@ func TestPromptHandlesMultibyte(t *testing.T) {
 	}
 }
 
-// A tag goes in at the cursor, keeping whatever followed it.
 func TestTagInsertsAtCursor(t *testing.T) {
 	w := type_(atPrompt(t), "look at  please")
 	for range 7 {
@@ -794,7 +768,6 @@ func TestTagEscapeKeepsWhatFollowed(t *testing.T) {
 	}
 }
 
-// The cursor must be visible wherever it sits, not only at the end.
 func TestPromptCursorIsVisibleMidString(t *testing.T) {
 	w := type_(atPrompt(t), "abc").Key("left").Key("left")
 
@@ -815,7 +788,6 @@ func TestPromptCursorVisibleAtEnd(t *testing.T) {
 	}
 }
 
-// key is pure, so it flags the request and the update loop spawns the editor.
 func TestPromptCtrlOAsksForTheEditor(t *testing.T) {
 	w := type_(atPrompt(t), "why is checkout called twice").Key("ctrl+o")
 
@@ -841,7 +813,6 @@ func TestPromptTakesBackWhatTheEditorWrote(t *testing.T) {
 	}
 }
 
-// A failed editor must not silently discard what was typed.
 func TestPromptKeepsTextWhenTheEditorFails(t *testing.T) {
 	w := type_(atPrompt(t), "typed by hand")
 
@@ -859,7 +830,6 @@ func TestPromptKeepsTextWhenTheEditorFails(t *testing.T) {
 	}
 }
 
-// ctrl+e stays end-of-line; the editor must not have taken it.
 func TestPromptCtrlEStillMovesToEnd(t *testing.T) {
 	w := type_(atPrompt(t), "abc").Key("home").Key("ctrl+e")
 
@@ -871,8 +841,6 @@ func TestPromptCtrlEStillMovesToEnd(t *testing.T) {
 	}
 }
 
-// The workspace must reach LoadFiles: it is chosen after the caller builds
-// the wizard, so a closure over the wizard would capture an empty one.
 func TestLoadFilesReceivesTheChosenWorkspace(t *testing.T) {
 	var gotRoot string
 	var gotRepos []string
@@ -883,7 +851,7 @@ func TestLoadFilesReceivesTheChosenWorkspace(t *testing.T) {
 		return []files.File{{Rel: "cmd/main.go", Base: "main.go"}}
 	}
 
-	w = type_(pick(w, "scopr"), "core").Key("enter") // scope step
+	w = type_(pick(w, "scopr"), "core").Key("enter")
 	out, cmd := w.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	w = out.(Wizard)
 
@@ -905,7 +873,6 @@ func TestLoadFilesReceivesTheChosenWorkspace(t *testing.T) {
 	}
 }
 
-// A scope with no files is not the same as one still being read.
 func TestTagSaysWhenTheScopeHasNoFiles(t *testing.T) {
 	w := atPrompt(t)
 	w.Files = nil
@@ -920,7 +887,6 @@ func TestTagSaysWhenTheScopeHasNoFiles(t *testing.T) {
 	}
 }
 
-// Without a width, long lines run past the edge of the terminal.
 func TestPromptWrapsToTheTerminalWidth(t *testing.T) {
 	w := atPrompt(t)
 	out, _ := w.Update(tea.WindowSizeMsg{Width: 40, Height: 24})
@@ -949,7 +915,6 @@ func TestListRowsAreClippedToWidth(t *testing.T) {
 	}
 }
 
-// The size reaches the scope editor too, which renders its own rows.
 func TestWindowSizeReachesTheScopeEditor(t *testing.T) {
 	w := wizard()
 	out, _ := w.Update(tea.WindowSizeMsg{Width: 33, Height: 24})

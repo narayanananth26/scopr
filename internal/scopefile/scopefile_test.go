@@ -64,7 +64,6 @@ func TestLoadMissingScope(t *testing.T) {
 	}
 }
 
-// A scope naming nothing must not read as a valid empty scope.
 func TestLoadEmptyScopeErrors(t *testing.T) {
 	r := root(t)
 	path := scopefile.Path(r, "hollow")
@@ -129,7 +128,6 @@ func TestRejectsPathSeparatorInName(t *testing.T) {
 	}
 }
 
-// The error is not enough: assert nothing was written outside the workspace.
 func TestRejectsDotDotName(t *testing.T) {
 	parent := root(t)
 	r := filepath.Join(parent, "workspace")
@@ -187,7 +185,6 @@ func TestListMissingDirIsEmpty(t *testing.T) {
 	}
 }
 
-// Save's temp files are dotted so a crash mid-write leaves nothing listable.
 func TestListSkipsDotfiles(t *testing.T) {
 	r := root(t)
 
@@ -286,7 +283,6 @@ func TestDeleteMissingScope(t *testing.T) {
 	}
 }
 
-// A name that escapes must not delete anything outside the scopes directory.
 func TestDeleteRejectsEscapingName(t *testing.T) {
 	parent := root(t)
 	r := filepath.Join(parent, "workspace")

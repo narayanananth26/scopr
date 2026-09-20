@@ -9,13 +9,6 @@ import (
 	"scopr/internal/workspace"
 )
 
-// tempRoot returns a temp dir with symlinks already resolved.
-//
-// On macOS t.TempDir() hands back a path under /var/folders, and /var is a
-// symlink to /private/var. Find resolves symlinks, so it returns the
-// /private/var spelling. Comparing its result against a raw t.TempDir() path
-// fails on every single test, for a reason that has nothing to do with the code
-// under test.
 func tempRoot(t *testing.T) string {
 	t.Helper()
 
@@ -26,7 +19,6 @@ func tempRoot(t *testing.T) string {
 	return root
 }
 
-// mkdir creates path and every parent, and returns path.
 func mkdir(t *testing.T, path string) string {
 	t.Helper()
 
@@ -36,7 +28,6 @@ func mkdir(t *testing.T, path string) string {
 	return path
 }
 
-// markDir makes dir a workspace root by creating a .scopr directory in it.
 func markDir(t *testing.T, dir string) string {
 	t.Helper()
 
@@ -44,7 +35,6 @@ func markDir(t *testing.T, dir string) string {
 	return dir
 }
 
-// writeFile creates a regular file at path, creating parent directories.
 func writeFile(t *testing.T, path string) string {
 	t.Helper()
 
@@ -93,8 +83,6 @@ func TestFindsMarkerSeveralLevelsUp(t *testing.T) {
 	}
 }
 
-// The nearest marker wins. A loop that collects every hit and returns the last
-// one passes all the tests above and fails only this one.
 func TestReturnsNearestMarker(t *testing.T) {
 	outer := markDir(t, tempRoot(t))
 	inner := markDir(t, mkdir(t, filepath.Join(outer, "a", "b")))
@@ -121,8 +109,6 @@ func TestNoMarkerAnywhere(t *testing.T) {
 	}
 }
 
-// A .scopr that is a regular file is a mistake, not an absence. Reporting it as
-// absent would walk past it and root the workspace somewhere higher, silently.
 func TestMarkerIsAFile(t *testing.T) {
 	root := tempRoot(t)
 	writeFile(t, filepath.Join(root, ".scopr"))
@@ -168,9 +154,6 @@ func TestEmptyStartDir(t *testing.T) {
 	}
 }
 
-// Reaching a workspace through a symlink must resolve to the real root. Without
-// resolution the walk climbs the symlink's lexical parents and lands in an
-// unrelated subtree.
 func TestResolvesSymlinkedStartDir(t *testing.T) {
 	root := tempRoot(t)
 	real := markDir(t, mkdir(t, filepath.Join(root, "real")))

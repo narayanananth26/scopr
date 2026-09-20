@@ -13,18 +13,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// traceLines is how much of the survey's activity stays on screen. The trace
-// is context for the wait, not a transcript.
 const traceLines = 8
 
-// TraceMsg is one line of survey activity.
 type TraceMsg string
 
-// DoneMsg ends the wait. Err is the survey's own failure, kept so the caller
-// reports it rather than the spinner.
 type DoneMsg struct{ Err error }
 
-// Survey shows a spinner and the survey's activity while it runs.
 type Survey struct {
 	Task string
 
@@ -34,13 +28,10 @@ type Survey struct {
 	elapsed time.Duration
 	width   int
 
-	// Err is the survey's failure, once finished.
 	Err error
 
-	// Done is set when the survey finished, either way.
 	Done bool
 
-	// Interrupted is set when the wait was cancelled from the keyboard.
 	Interrupted bool
 }
 
@@ -57,8 +48,6 @@ func NewSurvey(task string) Survey {
 
 func (m Survey) Init() tea.Cmd { return tea.Batch(m.spin.Tick, tick()) }
 
-// tick drives the elapsed counter independently of the spinner, so the number
-// advances at a readable rate rather than at the frame rate.
 func tick() tea.Cmd {
 	return tea.Tick(time.Second, func(time.Time) tea.Msg { return tickMsg{} })
 }
@@ -88,7 +77,7 @@ func (m Survey) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tick()
 
 	case tea.KeyMsg:
-		// Ctrl-C during a 30-second wait must stop it, not be swallowed.
+
 		if msg.String() == "ctrl+c" || msg.String() == "esc" {
 			m.Interrupted = true
 			return m, tea.Quit
@@ -124,11 +113,8 @@ func (m Survey) View() string {
 	return b.String()
 }
 
-// Work is the long operation. It writes progress lines to trace and returns
-// the operation's own error.
 type Work func(ctx context.Context, trace io.Writer) error
 
-// traceWriter turns writes into TraceMsg, one per line.
 type traceWriter struct {
 	send func(tea.Msg)
 	buf  []byte
@@ -149,11 +135,6 @@ func (w *traceWriter) Write(p []byte) (int, error) {
 	}
 }
 
-// RunSurvey runs work behind a spinner, returning work's own error.
-//
-// Interrupting cancels the context and waits, so nothing writes to a torn-down
-// program. A stderr that is not a terminal skips the spinner: progress goes
-// out plainly rather than as redraw escapes.
 func RunSurvey(ctx context.Context, task string, work Work) error {
 	if !isTerminal(os.Stderr) {
 		fmt.Fprintln(os.Stderr, "surveying the workspace...")

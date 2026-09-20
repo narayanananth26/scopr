@@ -10,8 +10,6 @@ import (
 	"strings"
 )
 
-// marker is the directory that makes a path a workspace. It is the same one
-// workspace.Find walks up looking for.
 const marker = ".scopr"
 
 var (
@@ -20,27 +18,16 @@ var (
 	ErrAmbiguousName = errors.New("ambiguous workspace")
 )
 
-// Workspace is a registered workspace.
 type Workspace struct {
-	// Path is absolute and is the key: two workspaces cannot share one.
 	Path string
 
-	// Name is for display and for --workspace. It is the shortest trailing
-	// piece of the path that no other registered workspace shares, so it can
-	// change when another workspace is registered.
 	Name string
 
-	// Stale reports that the path is gone, or is no longer a workspace.
 	Stale bool
 }
 
-// file is the registry: $XDG_CONFIG_HOME/scopr/workspaces, or ~/.config if
-// that is unset.
-//
-// Not os.UserConfigDir, which on macOS is ~/Library/Application Support and
-// ignores XDG_CONFIG_HOME. Not ~/.scopr either: workspace.Find walks up
-// looking for a directory of that name, so a registry there would make the
-// home directory a workspace.
+// Not os.UserConfigDir, which ignores XDG_CONFIG_HOME on macOS. Not ~/.scopr,
+// which workspace.Find would then treat as a workspace.
 func file() (string, error) {
 	dir := os.Getenv("XDG_CONFIG_HOME")
 	if dir == "" {
@@ -53,8 +40,6 @@ func file() (string, error) {
 	return filepath.Join(dir, "scopr", "workspaces"), nil
 }
 
-// read returns the registered paths in file order. A missing registry is an
-// empty list.
 func read() ([]string, error) {
 	path, err := file()
 	if err != nil {
@@ -80,8 +65,6 @@ func read() ([]string, error) {
 	return paths, nil
 }
 
-// write replaces the registry atomically, so a crash cannot leave it holding
-// fewer workspaces than it named.
 func write(paths []string) error {
 	path, err := file()
 	if err != nil {
@@ -115,10 +98,6 @@ func write(paths []string) error {
 	return nil
 }
 
-// List returns every registered workspace with its display name, sorted by
-// path. Entries whose path is gone are marked stale rather than dropped: a
-// dead entry should not break an unrelated launch, and should not vanish
-// without being seen.
 func List() ([]Workspace, error) {
 	paths, err := read()
 	if err != nil {
@@ -139,7 +118,6 @@ func List() ([]Workspace, error) {
 	return out, nil
 }
 
-// Live is List without the stale entries, for resolving against.
 func Live() ([]Workspace, error) {
 	all, err := List()
 	if err != nil {
@@ -155,8 +133,6 @@ func Live() ([]Workspace, error) {
 	return out, nil
 }
 
-// Add registers a directory, creating its marker so the directory is a
-// workspace by cwd detection too. Registering twice is a no-op.
 func Add(path string) error {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -189,8 +165,6 @@ func Add(path string) error {
 	return write(append(paths, abs))
 }
 
-// Remove forgets a workspace. The marker directory is left alone: it holds the
-// saved scopes.
 func Remove(path string) error {
 	paths, err := read()
 	if err != nil {
@@ -204,9 +178,6 @@ func Remove(path string) error {
 	return write(slices.Delete(paths, i, i+1))
 }
 
-// Lookup finds a workspace by display name, by any trailing piece of its path,
-// or by the whole path. More than one match is returned for the caller to
-// resolve rather than guessed at.
 func Lookup(query string) ([]Workspace, error) {
 	all, err := Live()
 	if err != nil {
@@ -231,11 +202,6 @@ func Lookup(query string) ([]Workspace, error) {
 	return matches, nil
 }
 
-// Names returns a display name per path, in the given order.
-//
-// Each starts at its base name; while any name is shared, only the colliding
-// ones take another parent segment. Paths are unique, so this terminates, and
-// a name that is already unique never grows.
 func Names(paths []string) []string {
 	depth := make([]int, len(paths))
 	for i := range depth {
@@ -287,8 +253,6 @@ func maxSegments(paths []string) int {
 	return most
 }
 
-// hasSegmentSuffix reports whether q matches whole trailing segments of path,
-// so "Ananth/Goodlife" matches but "life" does not.
 func hasSegmentSuffix(path, q string) bool {
 	parts := strings.Split(strings.Trim(filepath.ToSlash(path), "/"), "/")
 	want := strings.Split(q, "/")
@@ -299,7 +263,6 @@ func hasSegmentSuffix(path, q string) bool {
 	return slices.Equal(parts[len(parts)-len(want):], want)
 }
 
-// isWorkspace reports whether the path is still a directory holding a marker.
 func isWorkspace(path string) bool {
 	info, err := os.Stat(filepath.Join(path, marker))
 	return err == nil && info.IsDir()

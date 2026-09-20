@@ -29,7 +29,6 @@ func fixture(t *testing.T) string {
 	return root
 }
 
-// replies returns a runner that answers with the given stdout and error.
 func replies(out string, err error) runner {
 	return func(context.Context, Config, []string) ([]byte, error) {
 		return []byte(out), err
@@ -60,8 +59,6 @@ func TestParsesStructuredOutput(t *testing.T) {
 	}
 }
 
-// The documented trap: a decline is reported as success with the key omitted.
-// Reading is_error would report everything fine while holding no data.
 func TestDeclinedIsNotSuccess(t *testing.T) {
 	env := `{"subtype":"success","is_error":false,
 	  "result":"I need more information about the repositories."}`
@@ -86,8 +83,6 @@ func TestEmptyReposIsDeclined(t *testing.T) {
 	}
 }
 
-// --json-schema is documented but not guaranteed, so a fenced result is still
-// recovered.
 func TestStripsCodeFences(t *testing.T) {
 	env := `{"subtype":"success","is_error":false,
 	  "result":"` + "```json\\n{\\\"repos\\\":[{\\\"name\\\":\\\"apps/web\\\",\\\"reason\\\":\\\"the cart page\\\"}]}\\n```" + `"}`
@@ -107,8 +102,6 @@ func TestNonZeroExitErrors(t *testing.T) {
 	}
 }
 
-// Unparseable output is a failure, not a decline: a decline falls through to
-// the picker, whereas garbage means something is broken.
 func TestGarbageStdoutErrors(t *testing.T) {
 	got, err := inferWith(t, "not json at all", nil)
 	if err == nil {
@@ -162,8 +155,6 @@ func TestArgsCarryRequiredFlags(t *testing.T) {
 	}
 }
 
-// Demanding raw JSON in a system prompt measured 0/10 against 18/18 for
-// --json-schema alone. This test exists so nobody adds it back as a fix.
 func TestArgsOmitAppendSystemPrompt(t *testing.T) {
 	root := fixture(t)
 	repos, _ := repo.List(root)
@@ -229,7 +220,6 @@ func TestArgsWithoutTraceUseJSON(t *testing.T) {
 	}
 }
 
-// stream-json requires --verbose in print mode; without it the CLI refuses.
 func TestArgsWithTraceStream(t *testing.T) {
 	root := fixture(t)
 	repos, _ := repo.List(root)
@@ -245,8 +235,6 @@ func TestArgsWithTraceStream(t *testing.T) {
 	}
 }
 
-// The result line of a stream is identical to the single-object envelope, so
-// only the framing differs.
 func TestParsesResultFromStream(t *testing.T) {
 	stream := strings.Join([]string{
 		`{"type":"system","subtype":"init"}`,
@@ -298,7 +286,6 @@ func TestRenderIgnoresNoise(t *testing.T) {
 	}
 }
 
-// Tracing changes what is shown, not what is read.
 func TestTraceDoesNotChangeResult(t *testing.T) {
 	stream := strings.Join([]string{
 		`{"type":"assistant","message":{"content":[{"type":"text","text":"looking"}]}}`,

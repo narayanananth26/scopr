@@ -10,7 +10,6 @@ import (
 	"strings"
 )
 
-// dir is the directory under the workspace root holding one file per scope.
 const dir = ".scopr/scopes"
 
 var (
@@ -20,9 +19,8 @@ var (
 	ErrEmptyScope  = errors.New("scope names no repositories")
 )
 
-// ValidName rejects anything that would escape the scopes directory or hide
-// from List. A name becomes a filename, so this is the only thing standing
-// between a scope name and an arbitrary write.
+// A name becomes a filename, so this is all that stands between it and an
+// arbitrary write.
 func ValidName(name string) error {
 	switch {
 	case name == "":
@@ -37,13 +35,10 @@ func ValidName(name string) error {
 	return nil
 }
 
-// Path is the file backing a named scope.
 func Path(root, name string) string {
 	return filepath.Join(root, dir, name)
 }
 
-// Load returns the repository names in a scope, in order. Comments and blank
-// lines are dropped; a scope naming nothing is an error.
 func Load(root, name string) ([]string, error) {
 	if err := ValidName(name); err != nil {
 		return nil, err
@@ -72,9 +67,6 @@ func Load(root, name string) ([]string, error) {
 	return repos, nil
 }
 
-// Save writes a new scope. An existing name is an error rather than an
-// overwrite. The write is atomic, so a crash cannot leave a scope holding
-// fewer repos than it names.
 func Save(root, name string, repos []string) error {
 	if err := ValidName(name); err != nil {
 		return err
@@ -115,8 +107,6 @@ func Save(root, name string, repos []string) error {
 	return nil
 }
 
-// List returns the saved scope names, sorted. A missing scopes directory is
-// an empty list, not an error.
 func List(root string) ([]string, error) {
 	entries, err := os.ReadDir(filepath.Join(root, dir))
 	if errors.Is(err, fs.ErrNotExist) {
@@ -138,7 +128,6 @@ func List(root string) ([]string, error) {
 	return names, nil
 }
 
-// Rename moves a scope. An existing target is an error, leaving both intact.
 func Rename(root, from, to string) error {
 	if err := ValidName(from); err != nil {
 		return err
@@ -167,7 +156,6 @@ func Rename(root, from, to string) error {
 	return nil
 }
 
-// Delete removes a saved scope.
 func Delete(root, name string) error {
 	if err := ValidName(name); err != nil {
 		return err
