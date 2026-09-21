@@ -322,3 +322,19 @@ func TestBindUsesTheGivenRoot(t *testing.T) {
 		t.Error("loud not set")
 	}
 }
+
+func TestNearestFindsAMistypedCommand(t *testing.T) {
+	for typo, want := range map[string]string{
+		"lsit":      "list",
+		"lst":       "list",
+		"svae":      "save",
+		"wherr":     "where",
+		"workspac":  "workspace",
+		"gl-panel":  "",
+		"zzzzzzzzz": "",
+	} {
+		if got := cli.Commands.Nearest(typo); got != want {
+			t.Errorf("Nearest %q = %q, want %q", typo, got, want)
+		}
+	}
+}

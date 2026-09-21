@@ -18,6 +18,7 @@ import (
 	"scopr/internal/launch"
 	"scopr/internal/picker"
 	"scopr/internal/registry"
+	"scopr/internal/repo"
 	"scopr/internal/resolve"
 	"scopr/internal/scope"
 	"scopr/internal/scopefile"
@@ -321,7 +322,7 @@ func runWizard(a cli.Args) int {
 		prompt = p
 	}
 
-	return launchIn(root, repos, label(a, repos, w.Label()), prompt)
+	return launchIn(a, root, repos, label(a, repos, w.Label()), prompt)
 }
 
 func wizardEntries(a cli.Args) ([]ui.Space, []ui.Entry, error) {
@@ -392,10 +393,27 @@ func taggableFiles(root string, names []string) []files.File {
 	return out
 }
 
-func launchIn(root string, repos []string, name, prompt string) int {
+func commandHint(a cli.Args) string {
+	if len(a.Path) > 0 || len(a.Operands) == 0 {
+		return ""
+	}
+
+	near := cli.Commands.Nearest(a.Operands[0])
+	if near == "" {
+		return ""
+	}
+	return fmt.Sprintf("did you mean the command %q?", "scopr "+near)
+}
+
+func launchIn(a cli.Args, root string, repos []string, name, prompt string) int {
 	s, err := scope.ResolveArgs(root, repos)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		if errors.Is(err, repo.ErrNoSuchRepo) {
+			if hint := commandHint(a); hint != "" {
+				fmt.Fprintln(os.Stderr, hint)
+			}
+		}
 		return 1
 	}
 
@@ -432,7 +450,7 @@ func runLaunch(a cli.Args) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	return launchIn(root, a.Operands, label(a, a.Operands, ""), a.Str("prompt"))
+	return launchIn(a, root, a.Operands, label(a, a.Operands, ""), a.Str("prompt"))
 }
 
 func runInfer(a cli.Args) int {
@@ -496,7 +514,7 @@ func runInfer(a cli.Args) int {
 		prompt = task
 	}
 
-	return launchIn(root, repos, label(a, repos, task), prompt)
+	return launchIn(a, root, repos, label(a, repos, task), prompt)
 }
 
 func runWorkspaceAdd(a cli.Args) int {

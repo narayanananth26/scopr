@@ -30,6 +30,10 @@ func (c *Command) accepts(f *Flag) bool {
 	return slices.Contains(c.Accepts, f)
 }
 
+func (c *Command) Nearest(name string) string {
+	return nearestOf(c.options(), name)
+}
+
 func (c *Command) options() []string {
 	out := make([]string, 0, len(c.Children))
 	for _, k := range c.Children {
