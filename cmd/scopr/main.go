@@ -69,20 +69,48 @@ func emit(v any) int {
 	return 0
 }
 
-func runWhere(a cli.Args) int {
-	root, err := findRoot(a)
+func whereIs(a cli.Args) (string, bool) {
+	if a.Has("workspace") {
+		root, err := findRoot(a)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return "", false
+		}
+		return root, true
+	}
+
+	cwd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		return "", false
+	}
+
+	w, ok := registry.Containing(cwd)
+	if !ok {
+		fmt.Fprintln(os.Stderr, "not inside a scopr workspace")
+		fmt.Fprintln(os.Stderr, "  scopr workspace add .   register this directory")
+		fmt.Fprintln(os.Stderr, "  scopr workspace list    see the ones you have")
+		return "", false
+	}
+	return w.Path, true
+}
+
+func runWhere(a cli.Args) int {
+	root, ok := whereIs(a)
+	if !ok {
 		return 1
 	}
 
+	name := registry.NameOf(root)
+
 	if a.Bool("json") {
 		return emit(struct {
+			Name string `json:"name"`
 			Root string `json:"root"`
-		}{root})
+		}{name, root})
 	}
 
-	fmt.Fprintln(os.Stdout, root)
+	fmt.Fprintf(os.Stdout, "%s  %s\n", name, root)
 	return 0
 }
 

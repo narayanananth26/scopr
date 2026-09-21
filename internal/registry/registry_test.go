@@ -530,3 +530,29 @@ func TestNameOfFallsBackToTheBaseName(t *testing.T) {
 		t.Errorf("NameOf = %q, want unregistered", got)
 	}
 }
+
+func TestContainingResolvesSymlinks(t *testing.T) {
+	isolate(t)
+	real := workspaceDir(t, "real")
+
+	if err := Add(real); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(real, "inner"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	got, ok := Containing(filepath.Join(link, "inner"))
+	if !ok {
+		t.Fatal("Containing found nothing through a symlink")
+	}
+	if got.Path != real {
+		t.Errorf("Containing = %q, want %q", got.Path, real)
+	}
+}

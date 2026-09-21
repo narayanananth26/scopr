@@ -53,7 +53,7 @@ func One(opt Options) (string, error) {
 	if len(live) == 0 {
 		return "", fmt.Errorf("%w, and none are registered; add one with: scopr workspace add", ErrNoWorkspace)
 	}
-	return "", fmt.Errorf("%w; name one with --workspace, or run from inside it", ErrNoWorkspace)
+	return "", fmt.Errorf("%w; name one with --workspace, or run from inside it; list them with: scopr workspace list", ErrNoWorkspace)
 }
 
 func Scope(opt Options, name string) ([]Hit, error) {

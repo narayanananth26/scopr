@@ -297,8 +297,16 @@ func isDir(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-// Containing is the innermost registered workspace holding dir.
+// Containing is the innermost registered workspace holding dir. Registered
+// paths are symlink-resolved, so dir has to be too before comparing.
 func Containing(dir string) (Workspace, bool) {
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
+
 	all, err := Live()
 	if err != nil {
 		return Workspace{}, false
