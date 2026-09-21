@@ -1,10 +1,9 @@
 #compdef scopr
 
-# Completion for scopr. Install by putting this file on your fpath as _scopr,
-# or run: scopr completion zsh > ~/.zfunc/_scopr
+# Completion for scopr. Put this file on your fpath as _scopr.
 #
-# It asks the scopr binary for candidates, so it stays correct as commands
-# change. An old or missing binary yields no completions rather than errors.
+# Candidates come from the binary, so an old or missing scopr yields no
+# completions rather than errors.
 
 _scopr() {
   (( $+commands[scopr] )) || return 1
@@ -55,4 +54,10 @@ _scopr() {
   return $(( ! shown ))
 }
 
-_scopr "$@"
+# Autoloaded from fpath, zsh calls the file itself; sourced directly, it has to
+# register instead.
+if [[ $funcstack[1] == _scopr ]]; then
+  _scopr "$@"
+else
+  compdef _scopr scopr
+fi
