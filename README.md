@@ -9,8 +9,17 @@ scope, with the rest passed as `--add-dir`.
 ## Install
 
 ```sh
+brew tap narayanananth26/scopr
+brew install scopr
+```
+
+Or from a clone:
+
+```sh
 go install ./cmd/scopr
 ```
+
+scopr runs Claude Code, so `claude` has to be on your `PATH`.
 
 ## Use
 
@@ -86,19 +95,6 @@ fpath=(~/.zfunc $fpath)
 autoload -Uz compinit
 compinit
 ```
-
-If you already have a directory of your own on `fpath`, `print -l $fpath` will
-show it: write `_scopr` there and skip the `.zshrc` change. Under oh-my-zsh,
-which runs `compinit` for you, the `fpath` line has to go above
-`source $ZSH/oh-my-zsh.sh`, and you should not add a `compinit` call.
-
-Plugin managers can point at `completions/_scopr` in this repository, which is
-the same file `scopr completion zsh` prints.
-
-Nothing is installed for you and nothing writes to your shell configuration. A
-missing or older scopr yields no completions rather than errors, so the script
-and the binary can be updated independently. If the script is in place but
-nothing completes, the cache is the usual cause: `rm -f ~/.zcompdump && exec zsh`.
 
 ### fzf
 
