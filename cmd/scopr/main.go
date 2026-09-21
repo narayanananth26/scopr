@@ -54,7 +54,7 @@ func findScopeRoot(a cli.Args, name string) (string, error) {
 			fmt.Fprintf(&b, "\n  %s  %s", h.Workspace.Name, h.Workspace.Path)
 		}
 		b.WriteString("\nname one with --workspace")
-		return "", errors.New(b.String())
+		return "", fmt.Errorf("%w: %s", errAmbiguousWorkspace, b.String())
 	}
 	return hits[0].Workspace.Path, nil
 }
@@ -134,6 +134,57 @@ func runList(a cli.Args) int {
 	return 0
 }
 
+var errAmbiguousWorkspace = errors.New("scope is in more than one workspace")
+
+func reportScope(query string, err error) int {
+	var ambiguous *scopefile.AmbiguousError
+	if errors.As(err, &ambiguous) {
+		var b strings.Builder
+		fmt.Fprintf(&b, "%s%s matches more than one scope:", scope.Prefix, query)
+		for _, m := range ambiguous.Matches {
+			fmt.Fprintf(&b, "\n  %s%s", scope.Prefix, m)
+		}
+		fmt.Fprintln(os.Stderr, b.String())
+		return 2
+	}
+
+	fmt.Fprintln(os.Stderr, err)
+	if errors.Is(err, errAmbiguousWorkspace) {
+		return 2
+	}
+	return 1
+}
+
+func echoScopes(root string, operands []string) ([]string, int) {
+	out := slices.Clone(operands)
+
+	for i, o := range out {
+		name, ok := strings.CutPrefix(o, scope.Prefix)
+		if !ok {
+			continue
+		}
+
+		resolved, err := scopefile.One(root, name)
+		if err != nil {
+			return nil, reportScope(name, err)
+		}
+		if resolved != name {
+			fmt.Fprintf(os.Stderr, "using %s%s\n", scope.Prefix, resolved)
+		}
+		out[i] = scope.Prefix + resolved
+	}
+
+	return out, 0
+}
+
+func oneScope(root, query string) (string, int) {
+	name, err := scopefile.One(root, query)
+	if err != nil {
+		return "", reportScope(query, err)
+	}
+	return name, 0
+}
+
 func runShow(a cli.Args) int {
 	root, err := findRoot(a)
 	if err != nil {
@@ -141,7 +192,12 @@ func runShow(a cli.Args) int {
 		return 1
 	}
 
-	repos, err := scopefile.Load(root, strings.TrimPrefix(a.Operands[0], scope.Prefix))
+	name, code := oneScope(root, strings.TrimPrefix(a.Operands[0], scope.Prefix))
+	if code != 0 {
+		return code
+	}
+
+	repos, err := scopefile.Load(root, name)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -187,7 +243,25 @@ func runDelete(a cli.Args) int {
 		return 1
 	}
 
-	name := strings.TrimPrefix(a.Operands[0], scope.Prefix)
+	typed := strings.TrimPrefix(a.Operands[0], scope.Prefix)
+
+	name, code := oneScope(root, typed)
+	if code != 0 {
+		return code
+	}
+
+	if name != typed {
+		ok, err := ui.Confirm(fmt.Sprintf("delete %s%s?", scope.Prefix, name))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s%s matched %s%s; name it in full to delete it without a terminal\n",
+				scope.Prefix, typed, scope.Prefix, name)
+			return 2
+		}
+		if !ok {
+			fmt.Fprintln(os.Stderr, "cancelled")
+			return 0
+		}
+	}
 
 	if err := scopefile.Delete(root, name); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -205,7 +279,11 @@ func runRename(a cli.Args) int {
 		return 1
 	}
 
-	from := strings.TrimPrefix(a.Operands[0], scope.Prefix)
+	from, code := oneScope(root, strings.TrimPrefix(a.Operands[0], scope.Prefix))
+	if code != 0 {
+		return code
+	}
+
 	to := strings.TrimPrefix(a.Operands[1], scope.Prefix)
 
 	if err := scopefile.Rename(root, from, to); err != nil {
@@ -365,13 +443,15 @@ func launchIn(a cli.Args, root string, repos []string, name, prompt string) int 
 	return code
 }
 
-func launchRoot(a cli.Args) (string, error) {
+func launchRoot(a cli.Args) (string, string, error) {
 	for _, o := range a.Operands {
 		if name, ok := strings.CutPrefix(o, scope.Prefix); ok {
-			return findScopeRoot(a, name)
+			root, err := findScopeRoot(a, name)
+			return root, name, err
 		}
 	}
-	return findRoot(a)
+	root, err := findRoot(a)
+	return root, "", err
 }
 
 func label(a cli.Args, repos []string, fallback string) string {
@@ -385,12 +465,17 @@ func label(a cli.Args, repos []string, fallback string) string {
 }
 
 func runLaunch(a cli.Args) int {
-	root, err := launchRoot(a)
+	root, query, err := launchRoot(a)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return reportScope(query, err)
 	}
-	return launchIn(a, root, a.Operands, label(a, a.Operands, ""), a.Str("prompt"))
+
+	repos, code := echoScopes(root, a.Operands)
+	if code != 0 {
+		return code
+	}
+
+	return launchIn(a, root, repos, label(a, repos, ""), a.Str("prompt"))
 }
 
 func runInfer(a cli.Args) int {

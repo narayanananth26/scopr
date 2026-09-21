@@ -303,3 +303,92 @@ func TestDeleteRejectsEscapingName(t *testing.T) {
 		t.Errorf("Delete removed a file outside the scopes directory: %v", err)
 	}
 }
+
+func seeded(t *testing.T, names ...string) string {
+	t.Helper()
+
+	r := root(t)
+	for _, n := range names {
+		if err := scopefile.Save(r, n, []string{"api"}); err != nil {
+			t.Fatalf("Save %s: %v", n, err)
+		}
+	}
+	return r
+}
+
+func TestOneMatchesExactly(t *testing.T) {
+	r := seeded(t, "web", "webapp")
+
+	got, err := scopefile.One(r, "web")
+	if err != nil {
+		t.Fatalf("One: %v", err)
+	}
+	if got != "web" {
+		t.Errorf("name = %q, want web", got)
+	}
+}
+
+func TestOneMatchesAUniquePrefix(t *testing.T) {
+	r := seeded(t, "surfaces", "infra")
+
+	got, err := scopefile.One(r, "surf")
+	if err != nil {
+		t.Fatalf("One: %v", err)
+	}
+	if got != "surfaces" {
+		t.Errorf("name = %q, want surfaces", got)
+	}
+}
+
+func TestOneReportsAmbiguity(t *testing.T) {
+	r := seeded(t, "webapp", "website")
+
+	_, err := scopefile.One(r, "web")
+
+	var ambiguous *scopefile.AmbiguousError
+	if !errors.As(err, &ambiguous) {
+		t.Fatalf("One error = %v, want *AmbiguousError", err)
+	}
+	if !errors.Is(err, scopefile.ErrAmbiguous) {
+		t.Errorf("One error = %v, want it to wrap ErrAmbiguous", err)
+	}
+	if want := []string{"webapp", "website"}; !slices.Equal(ambiguous.Matches, want) {
+		t.Errorf("matches = %v, want %v", ambiguous.Matches, want)
+	}
+}
+
+func TestOneRejectsAnUnknownName(t *testing.T) {
+	r := seeded(t, "surfaces")
+
+	if _, err := scopefile.One(r, "nope"); !errors.Is(err, scopefile.ErrNoSuchScope) {
+		t.Fatalf("One error = %v, want ErrNoSuchScope", err)
+	}
+}
+
+func TestOneRejectsAnEmptyName(t *testing.T) {
+	r := seeded(t, "surfaces")
+
+	if _, err := scopefile.One(r, ""); !errors.Is(err, scopefile.ErrNoSuchScope) {
+		t.Fatalf("One error = %v, want ErrNoSuchScope", err)
+	}
+}
+
+func TestOneDoesNotMatchASuffix(t *testing.T) {
+	r := seeded(t, "surfaces")
+
+	if _, err := scopefile.One(r, "faces"); !errors.Is(err, scopefile.ErrNoSuchScope) {
+		t.Fatalf("One error = %v, want ErrNoSuchScope", err)
+	}
+}
+
+func TestLookupReturnsEveryMatch(t *testing.T) {
+	r := seeded(t, "webapp", "website", "infra")
+
+	got, err := scopefile.Lookup(r, "web")
+	if err != nil {
+		t.Fatalf("Lookup: %v", err)
+	}
+	if want := []string{"webapp", "website"}; !slices.Equal(got, want) {
+		t.Errorf("matches = %v, want %v", got, want)
+	}
+}

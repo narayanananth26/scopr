@@ -17,6 +17,7 @@ var (
 	ErrScopeExists = errors.New("scope already exists")
 	ErrInvalidName = errors.New("invalid scope name")
 	ErrEmptyScope  = errors.New("scope names no repositories")
+	ErrAmbiguous   = errors.New("ambiguous scope name")
 )
 
 // A name becomes a filename, so this is all that stands between it and an
@@ -33,6 +34,63 @@ func ValidName(name string) error {
 		return fmt.Errorf("%w: %q starts with a dot", ErrInvalidName, name)
 	}
 	return nil
+}
+
+type AmbiguousError struct {
+	Query   string
+	Matches []string
+}
+
+func (e *AmbiguousError) Error() string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "ambiguous scope %q; found %d matches:", e.Query, len(e.Matches))
+	for _, m := range e.Matches {
+		fmt.Fprintf(&b, "\n  %s", m)
+	}
+	b.WriteString("\nuse the full name to disambiguate")
+
+	return b.String()
+}
+
+func (e *AmbiguousError) Unwrap() error { return ErrAmbiguous }
+
+func Lookup(root, query string) ([]string, error) {
+	if query == "" {
+		return nil, fmt.Errorf("%w: empty", ErrNoSuchScope)
+	}
+
+	names, err := List(root)
+	if err != nil {
+		return nil, err
+	}
+
+	if slices.Contains(names, query) {
+		return []string{query}, nil
+	}
+
+	var matches []string
+	for _, n := range names {
+		if strings.HasPrefix(n, query) {
+			matches = append(matches, n)
+		}
+	}
+
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("%w: %q", ErrNoSuchScope, query)
+	}
+	return matches, nil
+}
+
+func One(root, query string) (string, error) {
+	matches, err := Lookup(root, query)
+	if err != nil {
+		return "", err
+	}
+	if len(matches) > 1 {
+		return "", &AmbiguousError{Query: query, Matches: matches}
+	}
+	return matches[0], nil
 }
 
 func Path(root, name string) string {

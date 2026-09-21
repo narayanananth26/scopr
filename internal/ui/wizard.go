@@ -662,7 +662,7 @@ func (w Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (w Wizard) View() string { return w.view() }
 
 func RunWizard(w Wizard) (Wizard, error) {
-	if !interactive() {
+	if !Interactive() {
 		return Wizard{}, ErrNoTTY
 	}
 

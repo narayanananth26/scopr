@@ -72,14 +72,21 @@ func Scope(opt Options, name string) ([]Hit, error) {
 		if len(matches) > 1 {
 			return nil, ambiguous(opt.Workspace, matches)
 		}
-		if !holds(matches[0].Path, name) {
-			return nil, fmt.Errorf("%w: %q in %s", scopefile.ErrNoSuchScope, name, matches[0].Name)
+		resolved, err := scopefile.One(matches[0].Path, name)
+		if err != nil {
+			return nil, fmt.Errorf("%w in %s", err, matches[0].Name)
 		}
-		return []Hit{{Workspace: matches[0], Scope: name}}, nil
+		return []Hit{{Workspace: matches[0], Scope: resolved}}, nil
 	}
 
-	if root, err := workspace.Find(opt.Cwd); err == nil && holds(root, name) {
-		return []Hit{{Workspace: registry.Workspace{Path: root, Name: root}, Scope: name}}, nil
+	if root, err := workspace.Find(opt.Cwd); err == nil {
+		resolved, err := scopefile.One(root, name)
+		if err == nil {
+			return []Hit{{Workspace: registry.Workspace{Path: root, Name: root}, Scope: resolved}}, nil
+		}
+		if errors.Is(err, scopefile.ErrAmbiguous) {
+			return nil, err
+		}
 	}
 
 	live, err := registry.Live()
@@ -89,8 +96,8 @@ func Scope(opt Options, name string) ([]Hit, error) {
 
 	var hits []Hit
 	for _, w := range live {
-		if holds(w.Path, name) {
-			hits = append(hits, Hit{Workspace: w, Scope: name})
+		if resolved, ok := holds(w.Path, name); ok {
+			hits = append(hits, Hit{Workspace: w, Scope: resolved})
 		}
 	}
 
@@ -119,9 +126,9 @@ func All() ([]Hit, error) {
 	return hits, nil
 }
 
-func holds(root, name string) bool {
-	_, err := scopefile.Load(root, name)
-	return err == nil
+func holds(root, name string) (string, bool) {
+	resolved, err := scopefile.One(root, name)
+	return resolved, err == nil
 }
 
 func ambiguous(query string, matches []registry.Workspace) error {

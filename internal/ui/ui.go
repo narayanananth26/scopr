@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"os"
@@ -16,7 +17,29 @@ var (
 	ErrNoTTY     = errors.New("no terminal")
 )
 
-func interactive() bool {
+func Confirm(question string) (bool, error) {
+	if !Interactive() {
+		return false, ErrNoTTY
+	}
+
+	fmt.Fprintf(os.Stderr, "%s [y/N] ", question)
+
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && line == "" {
+		return false, nil
+	}
+	return yes(line), nil
+}
+
+func yes(line string) bool {
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "y", "yes":
+		return true
+	}
+	return false
+}
+
+func Interactive() bool {
 	return isTerminal(os.Stdin) && isTerminal(os.Stderr)
 }
 
@@ -138,7 +161,7 @@ func (m Model) viewAdd() string {
 }
 
 func Run(m Model) ([]string, error) {
-	if !interactive() {
+	if !Interactive() {
 		return nil, ErrNoTTY
 	}
 

@@ -30,6 +30,12 @@ func expand(root string, args []string) ([]named, error) {
 			continue
 		}
 
+		from, err := scopefile.One(root, from)
+		if err != nil {
+			problems = append(problems, err)
+			continue
+		}
+
 		repos, err := scopefile.Load(root, from)
 		if err != nil {
 			problems = append(problems, err)

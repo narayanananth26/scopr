@@ -23,3 +23,29 @@ func TestRunWizardNeedsATerminal(t *testing.T) {
 		t.Fatalf("RunWizard error = %v, want ErrNoTTY", err)
 	}
 }
+
+func TestConfirmNeedsATerminal(t *testing.T) {
+	if _, err := Confirm("delete @web?"); !errors.Is(err, ErrNoTTY) {
+		t.Fatalf("Confirm error = %v, want ErrNoTTY", err)
+	}
+}
+
+func TestYesAcceptsOnlyAnExplicitYes(t *testing.T) {
+	for line, want := range map[string]bool{
+		"y\n":      true,
+		"Y\n":      true,
+		"yes\n":    true,
+		"  YES \n": true,
+		"n\n":      false,
+		"no\n":     false,
+		"\n":       false,
+		"":         false,
+		"nope\n":   false,
+		"ye\n":     false,
+		"yeah\n":   false,
+	} {
+		if got := yes(line); got != want {
+			t.Errorf("yes(%q) = %v, want %v", line, got, want)
+		}
+	}
+}

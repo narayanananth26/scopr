@@ -184,3 +184,27 @@ func TestScopeNamingSameRepoTwice(t *testing.T) {
 		t.Errorf("error %q should say @dup names it twice", err)
 	}
 }
+
+func TestExpandsAPrefix(t *testing.T) {
+	root := fixture(t)
+	saved(t, root, "surfaces", "api", "shared")
+
+	got, err := scope.ResolveArgs(root, []string{"@surf"})
+	if err != nil {
+		t.Fatalf("ResolveArgs: %v", err)
+	}
+	if want := []string{"api", "shared"}; !slices.Equal(bases(got), want) {
+		t.Errorf("repos = %v, want %v", bases(got), want)
+	}
+}
+
+func TestAmbiguousScopeInExpansionErrors(t *testing.T) {
+	root := fixture(t)
+	saved(t, root, "webapp", "api")
+	saved(t, root, "website", "shared")
+
+	_, err := scope.ResolveArgs(root, []string{"@web"})
+	if !errors.Is(err, scopefile.ErrAmbiguous) {
+		t.Fatalf("ResolveArgs error = %v, want ErrAmbiguous", err)
+	}
+}
