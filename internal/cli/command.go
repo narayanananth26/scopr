@@ -165,6 +165,12 @@ var Commands = &Command{
 		},
 		{Name: "help", Use: "[command]", Help: "show usage for a command", Operands: []Kind{KindCommand}, Min: 0, Max: 1},
 		{Name: "version", Help: "print the version", Min: 0, Max: 0},
+		{
+			Name:     "__complete",
+			Operands: []Kind{KindText},
+			Min:      0, Max: -1,
+			Accepts: flagset(Flags, "protocol"),
+		},
 	},
 }
 

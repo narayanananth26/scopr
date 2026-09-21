@@ -125,6 +125,7 @@ var Flags = MustTable(
 	Flag{Name: "json", Help: "machine-readable output"},
 	Flag{Name: "all", Short: "a", Help: "every workspace, grouped"},
 	Flag{Name: "help", Short: "h", Help: "show usage"},
+	Flag{Name: "protocol", Arg: "N", Help: "completion protocol the caller speaks"},
 )
 
 type Occurrence struct {

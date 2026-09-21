@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"scopr/internal/cli"
+	"scopr/internal/complete"
 	"scopr/internal/dispatch"
 	"scopr/internal/files"
 	"scopr/internal/launch"
@@ -803,7 +804,11 @@ func usage(path []string, c *cli.Command) {
 	}
 
 	fmt.Fprint(w, "\nflags:\n")
+	shown := documented()
 	for f := range cli.Flags.All() {
+		if root && !shown[f.Name] {
+			continue
+		}
 		if !root && !accepts(c, f.Name) {
 			continue
 		}
@@ -827,6 +832,109 @@ func accepts(c *cli.Command, name string) bool {
 		return true
 	}
 	return slices.ContainsFunc(c.Accepts, func(f *cli.Flag) bool { return f.Name == name })
+}
+
+// A flag no documented command takes belongs to a hidden one.
+func documented() map[string]bool {
+	out := map[string]bool{"help": true}
+
+	var walk func(*cli.Command)
+	walk = func(c *cli.Command) {
+		if c.Help != "" {
+			for _, f := range c.Accepts {
+				out[f.Name] = true
+			}
+		}
+		for _, k := range c.Children {
+			walk(k)
+		}
+	}
+	walk(cli.Commands)
+
+	return out
+}
+
+const completeProtocol = "1"
+
+func completeEnv() complete.Env {
+	return complete.Env{
+		Root: func(workspace string) string {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return ""
+			}
+			root, err := resolve.One(resolve.Options{Workspace: workspace, Cwd: cwd})
+			if err != nil {
+				return ""
+			}
+			return root
+		},
+
+		Scopes: func(root string) []complete.Candidate {
+			if root == "" {
+				return nil
+			}
+			entries, err := scopesIn(root)
+			if err != nil {
+				return nil
+			}
+			out := make([]complete.Candidate, 0, len(entries))
+			for _, e := range entries {
+				out = append(out, complete.Candidate{Value: e.Name, Desc: strings.Join(e.Repos, " ")})
+			}
+			return out
+		},
+
+		Repos: func(root string) []complete.Candidate {
+			if root == "" {
+				return nil
+			}
+			names, err := picker.Names(root)
+			if err != nil {
+				return nil
+			}
+			out := make([]complete.Candidate, 0, len(names))
+			for _, n := range names {
+				out = append(out, complete.Candidate{Value: n})
+			}
+			return out
+		},
+
+		Workspaces: func() []complete.Candidate {
+			all, err := registry.Live()
+			if err != nil {
+				return nil
+			}
+			out := make([]complete.Candidate, 0, len(all))
+			for _, w := range all {
+				out = append(out, complete.Candidate{Value: w.Name, Desc: w.Path})
+			}
+			return out
+		},
+	}
+}
+
+// Always exits 0 and never writes to stderr: a completion function must not
+// put anything in front of the prompt.
+func runComplete(a cli.Args) int {
+	if p := a.Str("protocol"); p != "" && p != completeProtocol {
+		return 0
+	}
+
+	r := complete.Complete(completeEnv(), a.Operands)
+
+	var b strings.Builder
+	for _, c := range r.Candidates {
+		fmt.Fprintf(&b, "%s\t%s\n", c.Value, c.Desc)
+	}
+	if r.Files {
+		b.WriteString(":1\n")
+	} else {
+		b.WriteString(":0\n")
+	}
+
+	os.Stdout.WriteString(b.String())
+	return 0
 }
 
 func runHelp(a cli.Args) int {
@@ -893,6 +1001,9 @@ func dispatchArgs(a cli.Args) int {
 	case "version":
 		fmt.Fprintln(os.Stdout, version)
 		return 0
+
+	case "__complete":
+		return runComplete(a)
 	}
 
 	usage(nil, cli.Commands)
