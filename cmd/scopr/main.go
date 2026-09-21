@@ -134,35 +134,6 @@ func runList(a cli.Args) int {
 	return 0
 }
 
-func scopeNames(path, operands []string, n int) ([]string, error) {
-	names := make([]string, 0, n)
-	missing := false
-
-	for i := range n {
-		name, ok := strings.CutPrefix(operands[i], scope.Prefix)
-		if !ok {
-			missing = true
-		}
-		names = append(names, name)
-	}
-
-	if missing {
-		return nil, fmt.Errorf("a scope is named with %s: %s", scope.Prefix, corrected(path, operands, n))
-	}
-	return names, nil
-}
-
-func corrected(path, operands []string, n int) string {
-	parts := append([]string{"scopr"}, path...)
-	for i, o := range operands {
-		if i < n && !strings.HasPrefix(o, scope.Prefix) {
-			o = scope.Prefix + o
-		}
-		parts = append(parts, o)
-	}
-	return strings.Join(parts, " ")
-}
-
 func runShow(a cli.Args) int {
 	root, err := findRoot(a)
 	if err != nil {
@@ -170,13 +141,7 @@ func runShow(a cli.Args) int {
 		return 1
 	}
 
-	names, err := scopeNames(a.Path, a.Operands, 1)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 2
-	}
-
-	repos, err := scopefile.Load(root, names[0])
+	repos, err := scopefile.Load(root, strings.TrimPrefix(a.Operands[0], scope.Prefix))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -199,13 +164,7 @@ func runSave(a cli.Args) int {
 		return 1
 	}
 
-	names, err := scopeNames(a.Path, a.Operands, 1)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 2
-	}
-
-	name, repos := names[0], a.Operands[1:]
+	name, repos := strings.TrimPrefix(a.Operands[0], scope.Prefix), a.Operands[1:]
 
 	if _, err := scope.ResolveArgs(root, repos); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -228,13 +187,7 @@ func runDelete(a cli.Args) int {
 		return 1
 	}
 
-	names, err := scopeNames(a.Path, a.Operands, 1)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 2
-	}
-
-	name := names[0]
+	name := strings.TrimPrefix(a.Operands[0], scope.Prefix)
 
 	if err := scopefile.Delete(root, name); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -252,13 +205,8 @@ func runRename(a cli.Args) int {
 		return 1
 	}
 
-	names, err := scopeNames(a.Path, a.Operands, 2)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 2
-	}
-
-	from, to := names[0], names[1]
+	from := strings.TrimPrefix(a.Operands[0], scope.Prefix)
+	to := strings.TrimPrefix(a.Operands[1], scope.Prefix)
 
 	if err := scopefile.Rename(root, from, to); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -401,24 +349,12 @@ func taggableFiles(root string, names []string) []files.File {
 	return out
 }
 
-func commandHint(a cli.Args) string {
-	if len(a.Path) > 0 || len(a.Operands) == 0 {
-		return ""
-	}
-
-	near := cli.Commands.Nearest(a.Operands[0])
-	if near == "" {
-		return ""
-	}
-	return fmt.Sprintf("did you mean the command %q?", "scopr "+near)
-}
-
 func launchIn(a cli.Args, root string, repos []string, name, prompt string) int {
 	s, err := scope.ResolveArgs(root, repos)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		if errors.Is(err, repo.ErrNoSuchRepo) {
-			if hint := commandHint(a); hint != "" {
+			if hint := a.CommandHint(); hint != "" {
 				fmt.Fprintln(os.Stderr, hint)
 			}
 		}

@@ -338,3 +338,84 @@ func TestNearestFindsAMistypedCommand(t *testing.T) {
 		}
 	}
 }
+
+func TestBindRequiresTheSigil(t *testing.T) {
+	for _, argv := range [][]string{
+		{"save", "web", "gl-panel"},
+		{"delete", "web"},
+		{"show", "web"},
+		{"rename", "old", "@new"},
+		{"rename", "@old", "new"},
+	} {
+		var sigil *cli.SigilError
+		if err := failed(t, argv...); !errors.As(err, &sigil) {
+			t.Errorf("Parse %q: err = %v, want *SigilError", argv, err)
+		}
+	}
+}
+
+func TestBindAcceptsTheSigil(t *testing.T) {
+	for _, argv := range [][]string{
+		{"save", "@web", "gl-panel"},
+		{"delete", "@web"},
+		{"show", "@web"},
+		{"rename", "@old", "@new"},
+	} {
+		parsed(t, argv...)
+	}
+}
+
+func TestSigilErrorCorrectsOnlyTheScopes(t *testing.T) {
+	err := failed(t, "save", "web", "gl-panel", "gl-api")
+
+	var sigil *cli.SigilError
+	if !errors.As(err, &sigil) {
+		t.Fatalf("err = %v, want *SigilError", err)
+	}
+	if want := "scopr save @web gl-panel gl-api"; sigil.Corrected != want {
+		t.Errorf("corrected = %q, want %q", sigil.Corrected, want)
+	}
+	if want := "a scope is named with @: scopr save @web gl-panel gl-api"; err.Error() != want {
+		t.Errorf("message = %q, want %q", err.Error(), want)
+	}
+}
+
+func TestSigilErrorCorrectsBothNames(t *testing.T) {
+	err := failed(t, "rename", "old", "@new")
+
+	var sigil *cli.SigilError
+	if !errors.As(err, &sigil) {
+		t.Fatalf("err = %v, want *SigilError", err)
+	}
+	if want := "scopr rename @old @new"; sigil.Corrected != want {
+		t.Errorf("corrected = %q, want %q", sigil.Corrected, want)
+	}
+}
+
+func TestBindChecksArityBeforeTheSigil(t *testing.T) {
+	var arity *cli.ArityError
+	if err := failed(t, "save", "web"); !errors.As(err, &arity) {
+		t.Errorf("err = %v, want *ArityError", err)
+	}
+}
+
+func TestCommandHintOnAMistypedCommand(t *testing.T) {
+	a := parsed(t, "lsit")
+
+	if want := `did you mean the command "scopr list"?`; a.CommandHint() != want {
+		t.Errorf("hint = %q, want %q", a.CommandHint(), want)
+	}
+}
+
+func TestCommandHintStaysQuiet(t *testing.T) {
+	for _, argv := range [][]string{
+		{"gl-panel"},
+		{"run", "lsit"},
+		{},
+		{"@web"},
+	} {
+		if got := parsed(t, argv...).CommandHint(); got != "" {
+			t.Errorf("Parse %q: hint = %q, want none", argv, got)
+		}
+	}
+}

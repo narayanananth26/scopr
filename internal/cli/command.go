@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"scopr/internal/scope"
 )
 
 type Command struct {
@@ -14,6 +16,7 @@ type Command struct {
 	Accepts  []*Flag
 	Min      int
 	Max      int
+	Scopes   int
 	FreeText bool
 }
 
@@ -89,25 +92,25 @@ var Commands = &Command{
 		{
 			Name: "show", Use: "@name",
 			Help: "print the repositories a scope names",
-			Min:  1, Max: 1,
+			Min:  1, Max: 1, Scopes: 1,
 			Accepts: flagset(Flags, "workspace", "json"),
 		},
 		{
 			Name: "save", Use: "@name <repo>...",
 			Help: "save a scope under that name",
-			Min:  2, Max: -1,
+			Min:  2, Max: -1, Scopes: 1,
 			Accepts: flagset(Flags, "workspace"),
 		},
 		{
 			Name: "delete", Use: "@name",
 			Help: "delete a saved scope",
-			Min:  1, Max: 1,
+			Min:  1, Max: 1, Scopes: 1,
 			Accepts: flagset(Flags, "workspace"),
 		},
 		{
 			Name: "rename", Use: "@old @new",
 			Help: "rename a saved scope",
-			Min:  2, Max: 2,
+			Min:  2, Max: 2, Scopes: 2,
 			Accepts: flagset(Flags, "workspace"),
 		},
 		{
@@ -168,6 +171,15 @@ func (e *FlagNotAcceptedError) Error() string {
 	return fmt.Sprintf("%s does not take %s", e.Command, e.Token)
 }
 
+type SigilError struct {
+	Command   string
+	Corrected string
+}
+
+func (e *SigilError) Error() string {
+	return fmt.Sprintf("a scope is named with %s: %s", scope.Prefix, e.Corrected)
+}
+
 type ArityError struct {
 	Command string
 	Use     string
@@ -223,11 +235,47 @@ func Bind(root *Command, s Scan) (Args, error) {
 		}
 	}
 
+	if cmd.Scopes > 0 && !sigiled(operands, cmd.Scopes) {
+		return Args{}, &SigilError{Command: use, Corrected: corrected(path, operands, cmd.Scopes)}
+	}
+
 	if cmd.FreeText && len(operands) > 0 {
 		out.Scan.Operands = []string{strings.Join(operands, " ")}
 	}
 
 	return out, nil
+}
+
+func sigiled(operands []string, n int) bool {
+	for _, o := range operands[:n] {
+		if !strings.HasPrefix(o, scope.Prefix) {
+			return false
+		}
+	}
+	return true
+}
+
+func corrected(path, operands []string, n int) string {
+	parts := append([]string{"scopr"}, path...)
+	for i, o := range operands {
+		if i < n && !strings.HasPrefix(o, scope.Prefix) {
+			o = scope.Prefix + o
+		}
+		parts = append(parts, o)
+	}
+	return strings.Join(parts, " ")
+}
+
+func (a Args) CommandHint() string {
+	if len(a.Path) > 0 || len(a.Operands) == 0 {
+		return ""
+	}
+
+	near := Commands.Nearest(a.Operands[0])
+	if near == "" {
+		return ""
+	}
+	return fmt.Sprintf("did you mean the command %q?", "scopr "+near)
 }
 
 func descend(root *Command, operands []string) (*Command, []string, []string, error) {
