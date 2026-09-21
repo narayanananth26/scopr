@@ -1,0 +1,104 @@
+name: Tap
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish, for example v0.1.0"
+        required: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: |
+          go vet ./...
+          go test ./...
+
+      - name: Describe the release
+        id: release
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          tag="${INPUT_TAG:-$REF_NAME}"
+          {
+            echo "tag=$tag"
+            echo "version=${tag#v}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Hash the release tarball
+        id: tarball
+        env:
+          REPO: ${{ github.repository }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          url="https://github.com/$REPO/archive/refs/tags/$TAG.tar.gz"
+
+          # The tarball can lag the tag by a few seconds.
+          for attempt in 1 2 3 4 5; do
+            if curl -fsSL "$url" -o release.tar.gz; then
+              break
+            fi
+            echo "attempt $attempt failed, retrying"
+            sleep 5
+          done
+
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "sha=$(sha256sum release.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout the tap
+        uses: actions/checkout@v4
+        with:
+          repository: narayanananth26/homebrew-scopr
+          token: ${{ secrets.TAP_TOKEN }}
+          path: tap
+
+      - name: Open a pull request against the tap
+        env:
+          GH_TOKEN: ${{ secrets.TAP_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          URL: ${{ steps.tarball.outputs.url }}
+          SHA: ${{ steps.tarball.outputs.sha }}
+        run: |
+          cd tap
+
+          sed -i -E "s|^  url .*|  url \"$URL\"|" Formula/scopr.rb
+          sed -i -E "s|^  sha256 .*|  sha256 \"$SHA\"|" Formula/scopr.rb
+
+          if git diff --quiet; then
+            echo "formula already at $TAG"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          branch="scopr-$VERSION"
+          git checkout -b "$branch"
+          git commit -am "scopr $VERSION"
+          git push -u origin "$branch" --force
+
+          gh pr create \
+            --repo narayanananth26/homebrew-scopr \
+            --head "$branch" \
+            --title "scopr $VERSION" \
+            --body "Automated from scopr $TAG.
+
+          url  $URL
+          sha  $SHA" || echo "a pull request for $branch is already open"
