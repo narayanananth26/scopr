@@ -435,3 +435,68 @@ func TestBindAcceptsAllOnlyForList(t *testing.T) {
 		}
 	}
 }
+
+func TestKindRepeatsTheLastEntry(t *testing.T) {
+	save, _ := find(cli.Commands, "save")
+
+	for i, want := range map[int]cli.Kind{
+		0: cli.KindNewScope,
+		1: cli.KindRepo,
+		2: cli.KindRepo,
+		9: cli.KindRepo,
+	} {
+		if got := save.Kind(i); got != want {
+			t.Errorf("save.Kind(%d) = %v, want %v", i, got, want)
+		}
+	}
+}
+
+func TestKindDefaultsToText(t *testing.T) {
+	list, _ := find(cli.Commands, "list")
+
+	if got := list.Kind(0); got != cli.KindText {
+		t.Errorf("list.Kind(0) = %v, want KindText", got)
+	}
+}
+
+func TestSigiledKinds(t *testing.T) {
+	for k, want := range map[cli.Kind]bool{
+		cli.KindScope:     true,
+		cli.KindNewScope:  true,
+		cli.KindRepo:      false,
+		cli.KindMember:    false,
+		cli.KindWorkspace: false,
+		cli.KindText:      false,
+	} {
+		if got := k.Sigiled(); got != want {
+			t.Errorf("Kind(%d).Sigiled() = %v, want %v", k, got, want)
+		}
+	}
+}
+
+func TestLocateStopsWithoutValidating(t *testing.T) {
+	cmd, path, rest := cli.Locate(cli.Commands, []string{"workspace"})
+	if cmd.Name != "workspace" || len(rest) != 0 {
+		t.Errorf("Locate workspace = %q rest %v, want the workspace command with nothing left", cmd.Name, rest)
+	}
+	if want := []string{"workspace"}; !slices.Equal(path, want) {
+		t.Errorf("path = %v, want %v", path, want)
+	}
+
+	cmd, _, rest = cli.Locate(cli.Commands, []string{"gl-api", "gl-web"})
+	if cmd != cli.Commands {
+		t.Errorf("Locate on repositories = %q, want the root command", cmd.Name)
+	}
+	if want := []string{"gl-api", "gl-web"}; !slices.Equal(rest, want) {
+		t.Errorf("rest = %v, want %v", rest, want)
+	}
+}
+
+func find(c *cli.Command, name string) (*cli.Command, bool) {
+	for _, k := range c.Children {
+		if k.Name == name {
+			return k, true
+		}
+	}
+	return nil, false
+}

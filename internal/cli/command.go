@@ -8,16 +8,43 @@ import (
 	"scopr/internal/scope"
 )
 
+type Kind int
+
+const (
+	KindText Kind = iota
+	KindScope
+	KindNewScope
+	KindRepo
+	KindMember
+	KindWorkspace
+	KindPath
+	KindCommand
+)
+
+func (k Kind) Sigiled() bool { return k == KindScope || k == KindNewScope }
+
 type Command struct {
 	Name     string
 	Use      string
 	Help     string
 	Children []*Command
 	Accepts  []*Flag
+	Operands []Kind
 	Min      int
 	Max      int
-	Scopes   int
 	FreeText bool
+}
+
+// Kind is what belongs at operand i. The last entry repeats, so a command
+// taking any number of repositories declares one.
+func (c *Command) Kind(i int) Kind {
+	if len(c.Operands) == 0 {
+		return KindText
+	}
+	if i >= len(c.Operands) {
+		return c.Operands[len(c.Operands)-1]
+	}
+	return c.Operands[i]
 }
 
 func (c *Command) child(name string) (*Command, bool) {
@@ -65,22 +92,25 @@ func flagset(t *Table, names ...string) []*Flag {
 }
 
 var Commands = &Command{
-	Use:     "<@scope|repo>...",
-	Help:    "start a session; the first repository becomes the working directory",
-	Min:     0,
-	Max:     -1,
-	Accepts: flagset(Flags, "workspace", "prompt", "label"),
+	Use:      "<@scope|repo>...",
+	Help:     "start a session; the first repository becomes the working directory",
+	Operands: []Kind{KindMember},
+	Min:      0,
+	Max:      -1,
+	Accepts:  flagset(Flags, "workspace", "prompt", "label"),
 	Children: []*Command{
 		{
 			Name: "run", Use: "<@scope|repo>...",
-			Help: "start a session, even for a repository named like a command",
-			Min:  1, Max: -1,
+			Help:     "start a session, even for a repository named like a command",
+			Operands: []Kind{KindMember},
+			Min:      1, Max: -1,
 			Accepts: flagset(Flags, "workspace", "prompt", "label"),
 		},
 		{
 			Name: "infer", Use: "<task>",
-			Help: "suggest a scope for the task, then start",
-			Min:  1, Max: -1, FreeText: true,
+			Help:     "suggest a scope for the task, then start",
+			Operands: []Kind{KindText},
+			Min:      1, Max: -1, FreeText: true,
 			Accepts: flagset(Flags, "workspace", "prompt", "label", "verbose"),
 		},
 		{
@@ -91,26 +121,30 @@ var Commands = &Command{
 		},
 		{
 			Name: "show", Use: "@name",
-			Help: "print the repositories a scope names",
-			Min:  1, Max: 1, Scopes: 1,
+			Help:     "print the repositories a scope names",
+			Operands: []Kind{KindScope},
+			Min:      1, Max: 1,
 			Accepts: flagset(Flags, "workspace", "json"),
 		},
 		{
 			Name: "save", Use: "@name <repo>...",
-			Help: "save a scope under that name",
-			Min:  2, Max: -1, Scopes: 1,
+			Help:     "save a scope under that name",
+			Operands: []Kind{KindNewScope, KindRepo},
+			Min:      2, Max: -1,
 			Accepts: flagset(Flags, "workspace"),
 		},
 		{
 			Name: "delete", Use: "@name",
-			Help: "delete a saved scope",
-			Min:  1, Max: 1, Scopes: 1,
+			Help:     "delete a saved scope",
+			Operands: []Kind{KindScope},
+			Min:      1, Max: 1,
 			Accepts: flagset(Flags, "workspace"),
 		},
 		{
 			Name: "rename", Use: "@old @new",
-			Help: "rename a saved scope",
-			Min:  2, Max: 2, Scopes: 2,
+			Help:     "rename a saved scope",
+			Operands: []Kind{KindScope, KindNewScope},
+			Min:      2, Max: 2,
 			Accepts: flagset(Flags, "workspace"),
 		},
 		{
@@ -125,11 +159,11 @@ var Commands = &Command{
 			Min:  0, Max: 0,
 			Children: []*Command{
 				{Name: "list", Help: "list registered workspaces", Min: 0, Max: 0, Accepts: flagset(Flags, "json")},
-				{Name: "add", Use: "[path]", Help: "register a workspace", Min: 0, Max: 1},
-				{Name: "remove", Use: "<name>", Help: "forget a workspace", Min: 1, Max: 1},
+				{Name: "add", Use: "[path]", Help: "register a workspace", Operands: []Kind{KindPath}, Min: 0, Max: 1},
+				{Name: "remove", Use: "<name>", Help: "forget a workspace", Operands: []Kind{KindWorkspace}, Min: 1, Max: 1},
 			},
 		},
-		{Name: "help", Use: "[command]", Help: "show usage for a command", Min: 0, Max: 1},
+		{Name: "help", Use: "[command]", Help: "show usage for a command", Operands: []Kind{KindCommand}, Min: 0, Max: 1},
 		{Name: "version", Help: "print the version", Min: 0, Max: 0},
 	},
 }
@@ -235,8 +269,10 @@ func Bind(root *Command, s Scan) (Args, error) {
 		}
 	}
 
-	if cmd.Scopes > 0 && !sigiled(operands, cmd.Scopes) {
-		return Args{}, &SigilError{Command: use, Corrected: corrected(path, operands, cmd.Scopes)}
+	for i, o := range operands {
+		if cmd.Kind(i).Sigiled() && !strings.HasPrefix(o, scope.Prefix) {
+			return Args{}, &SigilError{Command: use, Corrected: corrected(path, operands, cmd)}
+		}
 	}
 
 	if cmd.FreeText && len(operands) > 0 {
@@ -246,19 +282,10 @@ func Bind(root *Command, s Scan) (Args, error) {
 	return out, nil
 }
 
-func sigiled(operands []string, n int) bool {
-	for _, o := range operands[:n] {
-		if !strings.HasPrefix(o, scope.Prefix) {
-			return false
-		}
-	}
-	return true
-}
-
-func corrected(path, operands []string, n int) string {
+func corrected(path, operands []string, c *Command) string {
 	parts := append([]string{"scopr"}, path...)
 	for i, o := range operands {
-		if i < n && !strings.HasPrefix(o, scope.Prefix) {
+		if c.Kind(i).Sigiled() && !strings.HasPrefix(o, scope.Prefix) {
 			o = scope.Prefix + o
 		}
 		parts = append(parts, o)
@@ -276,6 +303,25 @@ func (a Args) CommandHint() string {
 		return ""
 	}
 	return fmt.Sprintf("did you mean the command %q?", "scopr "+near)
+}
+
+// Locate resolves as far as the operands reach without validating anything.
+// Completion runs on incomplete input, where descend would refuse.
+func Locate(root *Command, operands []string) (*Command, []string, []string) {
+	cmd := root
+	var path []string
+
+	for len(cmd.Children) > 0 && len(operands) > 0 {
+		next, ok := cmd.child(operands[0])
+		if !ok {
+			break
+		}
+		path = append(path, operands[0])
+		operands = operands[1:]
+		cmd = next
+	}
+
+	return cmd, path, operands
 }
 
 func descend(root *Command, operands []string) (*Command, []string, []string, error) {
