@@ -10,8 +10,12 @@ scope, with the rest passed as `--add-dir`.
 
 ```sh
 brew tap narayanananth26/scopr
+brew trust narayanananth26/scopr
 brew install scopr
 ```
+
+Homebrew refuses to load formulae from a third-party tap until you trust it,
+which is what the middle line is for.
 
 Or from a clone:
 
@@ -95,6 +99,18 @@ fpath=(~/.zfunc $fpath)
 autoload -Uz compinit
 compinit
 ```
+
+Installing through Homebrew puts `_scopr` in
+`$(brew --prefix)/share/zsh/site-functions` for you, so there is no file to
+write. That directory still has to be on your fpath, which is what Homebrew's
+own setup line does:
+
+```zsh
+eval "$(brew shellenv)"
+```
+
+If `brew`, `gh` or `cargo` completions do not work either, that line is the one
+that is missing.
 
 ### fzf
 
