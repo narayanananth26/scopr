@@ -419,3 +419,19 @@ func TestCommandHintStaysQuiet(t *testing.T) {
 		}
 	}
 }
+
+func TestBindAcceptsAllOnlyForList(t *testing.T) {
+	parsed(t, "list", "--all")
+	parsed(t, "list", "-a")
+
+	for _, argv := range [][]string{
+		{"show", "@n", "--all"},
+		{"where", "--all"},
+		{"workspace", "list", "--all"},
+	} {
+		var refused *cli.FlagNotAcceptedError
+		if err := failed(t, argv...); !errors.As(err, &refused) {
+			t.Errorf("Parse %q: err = %v, want *FlagNotAcceptedError", argv, err)
+		}
+	}
+}

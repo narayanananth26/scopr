@@ -123,6 +123,7 @@ var Flags = MustTable(
 	Flag{Name: "label", Short: "l", Arg: "TEXT", Help: "name the session"},
 	Flag{Name: "verbose", Help: "show the survey's tool calls"},
 	Flag{Name: "json", Help: "machine-readable output"},
+	Flag{Name: "all", Short: "a", Help: "every workspace, grouped"},
 	Flag{Name: "help", Short: "h", Help: "show usage"},
 )
 

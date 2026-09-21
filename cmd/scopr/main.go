@@ -86,32 +86,62 @@ func runWhere(a cli.Args) int {
 	return 0
 }
 
+type scopeEntry struct {
+	Name  string   `json:"name"`
+	Repos []string `json:"repos"`
+}
+
+func scopesIn(root string) ([]scopeEntry, error) {
+	names, err := scopefile.List(root)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]scopeEntry, 0, len(names))
+	for _, name := range names {
+		repos, err := scopefile.Load(root, name)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, scopeEntry{name, repos})
+	}
+	return out, nil
+}
+
+func widest(entries []scopeEntry) int {
+	w := 0
+	for _, e := range entries {
+		w = max(w, len(e.Name))
+	}
+	return w
+}
+
+func printScopes(entries []scopeEntry, width, indent int) {
+	for _, e := range entries {
+		fmt.Fprintf(os.Stdout, "%*s%s%-*s  %s\n",
+			indent, "", scope.Prefix, width, e.Name, strings.Join(e.Repos, " "))
+	}
+}
+
 func runList(a cli.Args) int {
+	if a.Bool("all") {
+		if a.Has("workspace") {
+			fmt.Fprintln(os.Stderr, "scopr list takes --all or --workspace, not both")
+			return 2
+		}
+		return runListAll(a)
+	}
+
 	root, err := findRoot(a)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 
-	names, err := scopefile.List(root)
+	entries, err := scopesIn(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
-	}
-
-	type entry struct {
-		Name  string   `json:"name"`
-		Repos []string `json:"repos"`
-	}
-
-	entries := make([]entry, 0, len(names))
-	for _, name := range names {
-		repos, err := scopefile.Load(root, name)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		entries = append(entries, entry{name, repos})
 	}
 
 	if a.Bool("json") {
@@ -123,13 +153,56 @@ func runList(a cli.Args) int {
 		return 0
 	}
 
-	width := 0
-	for _, e := range entries {
-		width = max(width, len(e.Name))
+	printScopes(entries, widest(entries), 0)
+	return 0
+}
+
+func runListAll(a cli.Args) int {
+	live, err := registry.Live()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
 	}
 
-	for _, e := range entries {
-		fmt.Fprintf(os.Stdout, "%s%-*s  %s\n", scope.Prefix, width, e.Name, strings.Join(e.Repos, " "))
+	type group struct {
+		Workspace string       `json:"workspace"`
+		Path      string       `json:"path"`
+		Scopes    []scopeEntry `json:"scopes"`
+	}
+
+	var (
+		groups []group
+		width  int
+	)
+
+	for _, w := range live {
+		entries, err := scopesIn(w.Path)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if len(entries) == 0 {
+			continue
+		}
+		groups = append(groups, group{w.Name, w.Path, entries})
+		width = max(width, widest(entries))
+	}
+
+	if a.Bool("json") {
+		return emit(groups)
+	}
+
+	if len(groups) == 0 {
+		fmt.Fprintln(os.Stderr, "no saved scopes in any workspace; create one with: scopr save @name <repo>...")
+		return 0
+	}
+
+	for i, g := range groups {
+		if i > 0 {
+			fmt.Fprintln(os.Stdout)
+		}
+		fmt.Fprintln(os.Stdout, g.Workspace)
+		printScopes(g.Scopes, width, 2)
 	}
 	return 0
 }
