@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"scopr/completions"
 	"scopr/internal/cli"
 	"scopr/internal/complete"
 	"scopr/internal/dispatch"
@@ -854,6 +855,17 @@ func documented() map[string]bool {
 	return out
 }
 
+func runCompletion(a cli.Args) int {
+	switch a.Operands[0] {
+	case "zsh":
+		fmt.Fprint(os.Stdout, completions.Zsh)
+		return 0
+	}
+
+	fmt.Fprintf(os.Stderr, "no completion script for %q; scopr has one for zsh\n", a.Operands[0])
+	return 2
+}
+
 const completeProtocol = "1"
 
 func completeEnv() complete.Env {
@@ -925,7 +937,7 @@ func runComplete(a cli.Args) int {
 
 	var b strings.Builder
 	for _, c := range r.Candidates {
-		fmt.Fprintf(&b, "%s\t%s\n", c.Value, c.Desc)
+		fmt.Fprintf(&b, "%s\t%s\t%s\n", c.Value, c.Desc, c.Group)
 	}
 	if r.Files {
 		b.WriteString(":1\n")
@@ -1001,6 +1013,9 @@ func dispatchArgs(a cli.Args) int {
 	case "version":
 		fmt.Fprintln(os.Stdout, version)
 		return 0
+
+	case "completion":
+		return runCompletion(a)
 
 	case "__complete":
 		return runComplete(a)

@@ -217,3 +217,27 @@ func TestNoArgvIsTheSameAsEmpty(t *testing.T) {
 func TestHiddenCommandsAreNotOffered(t *testing.T) {
 	lacks(t, values(t, ""), "__complete")
 }
+
+func TestCandidatesCarryAGroup(t *testing.T) {
+	for _, tc := range []struct {
+		argv  []string
+		value string
+		group string
+	}{
+		{[]string{""}, "list", "commands"},
+		{[]string{""}, "gl-api", "repos"},
+		{[]string{""}, "@surfaces", "scopes"},
+		{[]string{"workspace", "remove", ""}, "Goodlife", "workspaces"},
+		{[]string{"list", "-"}, "--json", "flags"},
+	} {
+		var found string
+		for _, c := range complete.Complete(env(), tc.argv).Candidates {
+			if c.Value == tc.value {
+				found = c.Group
+			}
+		}
+		if found != tc.group {
+			t.Errorf("%q: %s grouped as %q, want %q", tc.argv, tc.value, found, tc.group)
+		}
+	}
+}

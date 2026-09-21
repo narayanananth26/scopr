@@ -10,6 +10,10 @@ import (
 type Candidate struct {
 	Value string
 	Desc  string
+
+	// Group tags the candidate for the shell, which uses it to label and
+	// preview each kind separately.
+	Group string
 }
 
 type Result struct {
@@ -83,7 +87,7 @@ func awaitingValue(before []string) (*cli.Flag, bool) {
 
 func values(env Env, f *cli.Flag) Result {
 	if f.Name == "workspace" {
-		return Result{Candidates: env.Workspaces()}
+		return Result{Candidates: stamp(env.Workspaces(), "workspaces", "")}
 	}
 	return Result{}
 }
@@ -91,16 +95,19 @@ func values(env Env, f *cli.Flag) Result {
 func forKind(env Env, root string, k cli.Kind) Result {
 	switch k {
 	case cli.KindScope:
-		return Result{Candidates: sigil(env.Scopes(root))}
+		return Result{Candidates: stamp(env.Scopes(root), "scopes", scope.Prefix)}
 
 	case cli.KindRepo:
-		return Result{Candidates: env.Repos(root)}
+		return Result{Candidates: stamp(env.Repos(root), "repos", "")}
 
 	case cli.KindMember:
-		return Result{Candidates: append(env.Repos(root), sigil(env.Scopes(root))...)}
+		return Result{Candidates: append(
+			stamp(env.Repos(root), "repos", ""),
+			stamp(env.Scopes(root), "scopes", scope.Prefix)...,
+		)}
 
 	case cli.KindWorkspace:
-		return Result{Candidates: env.Workspaces()}
+		return Result{Candidates: stamp(env.Workspaces(), "workspaces", "")}
 
 	case cli.KindCommand:
 		return Result{Candidates: children(cli.Commands)}
@@ -111,10 +118,10 @@ func forKind(env Env, root string, k cli.Kind) Result {
 	return Result{}
 }
 
-func sigil(in []Candidate) []Candidate {
+func stamp(in []Candidate, group, prefix string) []Candidate {
 	out := make([]Candidate, 0, len(in))
 	for _, c := range in {
-		out = append(out, Candidate{scope.Prefix + c.Value, c.Desc})
+		out = append(out, Candidate{prefix + c.Value, c.Desc, group})
 	}
 	return out
 }
@@ -125,7 +132,7 @@ func children(c *cli.Command) []Candidate {
 		if k.Help == "" {
 			continue
 		}
-		out = append(out, Candidate{k.Name, k.Help})
+		out = append(out, Candidate{k.Name, k.Help, "commands"})
 	}
 	return out
 }
@@ -136,7 +143,7 @@ func flags(c *cli.Command) Result {
 		if f.Name != "help" && !accepts(c, f.Name) {
 			continue
 		}
-		out = append(out, Candidate{"--" + f.Name, f.Help})
+		out = append(out, Candidate{"--" + f.Name, f.Help, "flags"})
 	}
 	return Result{Candidates: out}
 }

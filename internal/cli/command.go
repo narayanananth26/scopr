@@ -164,6 +164,12 @@ var Commands = &Command{
 			},
 		},
 		{Name: "help", Use: "[command]", Help: "show usage for a command", Operands: []Kind{KindCommand}, Min: 0, Max: 1},
+		{
+			Name: "completion", Use: "<shell>",
+			Help:     "print the shell completion script",
+			Operands: []Kind{KindText},
+			Min:      1, Max: 1,
+		},
 		{Name: "version", Help: "print the version", Min: 0, Max: 0},
 		{
 			Name:     "__complete",
