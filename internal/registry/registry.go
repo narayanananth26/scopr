@@ -14,6 +14,7 @@ const marker = ".scopr"
 
 var (
 	ErrNotDirectory  = errors.New("not a directory")
+	ErrNested        = errors.New("workspaces cannot nest")
 	ErrNoSuchEntry   = errors.New("workspace not registered")
 	ErrAmbiguousName = errors.New("ambiguous workspace")
 )
@@ -109,7 +110,7 @@ func List() ([]Workspace, error) {
 
 	out := make([]Workspace, 0, len(paths))
 	for _, p := range paths {
-		out = append(out, Workspace{Path: p, Stale: !isWorkspace(p)})
+		out = append(out, Workspace{Path: p, Stale: !isDir(p)})
 	}
 
 	for i, name := range Names(paths) {
@@ -151,10 +152,6 @@ func Add(path string) error {
 		return fmt.Errorf("%w: %q", ErrNotDirectory, abs)
 	}
 
-	if err := os.MkdirAll(filepath.Join(abs, marker), 0o755); err != nil {
-		return fmt.Errorf("create marker in %q: %w", abs, err)
-	}
-
 	paths, err := read()
 	if err != nil {
 		return err
@@ -162,7 +159,39 @@ func Add(path string) error {
 	if slices.Contains(paths, abs) {
 		return nil
 	}
+
+	for _, p := range paths {
+		if under(abs, p) {
+			return fmt.Errorf("%w: %s is inside %s", ErrNested, abs, p)
+		}
+		if under(p, abs) {
+			return fmt.Errorf("%w: %s contains %s", ErrNested, abs, p)
+		}
+	}
+
+	if err := os.MkdirAll(filepath.Join(abs, marker), 0o755); err != nil {
+		return fmt.Errorf("create marker in %q: %w", abs, err)
+	}
+
 	return write(append(paths, abs))
+}
+
+func under(path, root string) bool {
+	return strings.HasPrefix(path, root+string(filepath.Separator))
+}
+
+// NameOf is the display name for a registered path, or its base name when
+// the path is not registered.
+func NameOf(path string) string {
+	all, err := List()
+	if err == nil {
+		for _, w := range all {
+			if w.Path == path {
+				return w.Name
+			}
+		}
+	}
+	return filepath.Base(path)
 }
 
 func Remove(path string) error {
@@ -263,7 +292,26 @@ func hasSegmentSuffix(path, q string) bool {
 	return slices.Equal(parts[len(parts)-len(want):], want)
 }
 
-func isWorkspace(path string) bool {
-	info, err := os.Stat(filepath.Join(path, marker))
+func isDir(path string) bool {
+	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
+}
+
+// Containing is the innermost registered workspace holding dir.
+func Containing(dir string) (Workspace, bool) {
+	all, err := Live()
+	if err != nil {
+		return Workspace{}, false
+	}
+
+	var best Workspace
+	for _, w := range all {
+		if w.Path != dir && !under(dir, w.Path) {
+			continue
+		}
+		if best.Path == "" || len(w.Path) > len(best.Path) {
+			best = w
+		}
+	}
+	return best, best.Path != ""
 }

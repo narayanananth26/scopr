@@ -232,7 +232,7 @@ func runSave(a cli.Args) int {
 		return 1
 	}
 
-	fmt.Fprintf(os.Stderr, "saved %s%s: %s\n", scope.Prefix, name, strings.Join(repos, " "))
+	fmt.Fprintf(os.Stderr, "saved %s%s in %s: %s\n", scope.Prefix, name, registry.NameOf(root), strings.Join(repos, " "))
 	return 0
 }
 
@@ -268,7 +268,7 @@ func runDelete(a cli.Args) int {
 		return 1
 	}
 
-	fmt.Fprintf(os.Stderr, "deleted %s%s\n", scope.Prefix, name)
+	fmt.Fprintf(os.Stderr, "deleted %s%s in %s\n", scope.Prefix, name, registry.NameOf(root))
 	return 0
 }
 
@@ -291,7 +291,7 @@ func runRename(a cli.Args) int {
 		return 1
 	}
 
-	fmt.Fprintf(os.Stderr, "renamed %s%s to %s%s\n", scope.Prefix, from, scope.Prefix, to)
+	fmt.Fprintf(os.Stderr, "renamed %s%s to %s%s in %s\n", scope.Prefix, from, scope.Prefix, to, registry.NameOf(root))
 	return 0
 }
 
@@ -349,7 +349,7 @@ func runWizard(a cli.Args) int {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
-		fmt.Fprintf(os.Stderr, "saved %s%s\n", scope.Prefix, name)
+		fmt.Fprintf(os.Stderr, "saved %s%s in %s\n", scope.Prefix, name, registry.NameOf(root))
 	}
 
 	return launchIn(a, root, repos, label(a, repos, w.Label()), w.Prompt())
@@ -642,6 +642,7 @@ func runWorkspaceRemove(a cli.Args) int {
 		return 1
 	}
 	fmt.Fprintf(os.Stderr, "removed %s\n", matches[0].Path)
+	fmt.Fprintf(os.Stderr, "its scopes stay in %s\n", filepath.Join(matches[0].Path, ".scopr"))
 	return 0
 }
 

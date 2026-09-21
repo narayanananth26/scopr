@@ -7,7 +7,6 @@ import (
 
 	"scopr/internal/registry"
 	"scopr/internal/scopefile"
-	"scopr/internal/workspace"
 )
 
 var (
@@ -39,12 +38,8 @@ func One(opt Options) (string, error) {
 		return matches[0].Path, nil
 	}
 
-	root, err := workspace.Find(opt.Cwd)
-	if err == nil {
-		return root, nil
-	}
-	if !errors.Is(err, workspace.ErrNotFound) {
-		return "", err
+	if w, ok := registry.Containing(opt.Cwd); ok {
+		return w.Path, nil
 	}
 
 	live, err := registry.Live()
@@ -79,10 +74,10 @@ func Scope(opt Options, name string) ([]Hit, error) {
 		return []Hit{{Workspace: matches[0], Scope: resolved}}, nil
 	}
 
-	if root, err := workspace.Find(opt.Cwd); err == nil {
-		resolved, err := scopefile.One(root, name)
+	if w, ok := registry.Containing(opt.Cwd); ok {
+		resolved, err := scopefile.One(w.Path, name)
 		if err == nil {
-			return []Hit{{Workspace: registry.Workspace{Path: root, Name: root}, Scope: resolved}}, nil
+			return []Hit{{Workspace: w, Scope: resolved}}, nil
 		}
 		if errors.Is(err, scopefile.ErrAmbiguous) {
 			return nil, err

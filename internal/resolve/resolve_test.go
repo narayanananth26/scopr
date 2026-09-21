@@ -96,17 +96,13 @@ func TestOneUsesTheWorkspaceYouAreIn(t *testing.T) {
 	}
 }
 
-func TestOneWorksInAnUnregisteredWorkspace(t *testing.T) {
+func TestOneIgnoresAnUnregisteredWorkspace(t *testing.T) {
 	isolate(t)
 	root := tempRoot(t)
 	dir := unregistered(t, root, "Loose")
 
-	got, err := resolve.One(resolve.Options{Cwd: dir})
-	if err != nil {
-		t.Fatalf("One: %v", err)
-	}
-	if got != dir {
-		t.Errorf("One = %q, want %q", got, dir)
+	if _, err := resolve.One(resolve.Options{Cwd: dir}); err == nil {
+		t.Fatal("One resolved an unregistered directory")
 	}
 }
 

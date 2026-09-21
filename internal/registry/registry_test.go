@@ -190,7 +190,7 @@ func TestListMarksMissingPathsStale(t *testing.T) {
 	}
 }
 
-func TestListMarksMarkerlessStale(t *testing.T) {
+func TestListIgnoresAMissingMarker(t *testing.T) {
 	isolate(t)
 	dir := workspaceDir(t, "Goodlife")
 
@@ -202,8 +202,8 @@ func TestListMarksMarkerlessStale(t *testing.T) {
 	}
 
 	all, _ := List()
-	if len(all) != 1 || !all[0].Stale {
-		t.Errorf("List = %+v, want it marked stale", all)
+	if len(all) != 1 || all[0].Stale {
+		t.Errorf("List = %+v, want it live: the registry says what a workspace is", all)
 	}
 }
 
@@ -401,5 +401,132 @@ func TestRegistryFallsBackToDotConfig(t *testing.T) {
 	}
 	if want := filepath.Join(home, ".config", "scopr", "workspaces"); got != want {
 		t.Errorf("registry at %q, want %q", got, want)
+	}
+}
+
+func TestAddRefusesANestedWorkspace(t *testing.T) {
+	isolate(t)
+	outer := workspaceDir(t, "outer")
+	inner := filepath.Join(outer, "a", "inner")
+
+	if err := os.MkdirAll(inner, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := Add(outer); err != nil {
+		t.Fatalf("Add outer: %v", err)
+	}
+
+	if err := Add(inner); !errors.Is(err, ErrNested) {
+		t.Fatalf("Add inner error = %v, want ErrNested", err)
+	}
+	if _, err := os.Stat(filepath.Join(inner, ".scopr")); err == nil {
+		t.Error("a marker was created for the refused workspace")
+	}
+}
+
+func TestAddRefusesAnEnclosingWorkspace(t *testing.T) {
+	isolate(t)
+	outer := workspaceDir(t, "outer")
+	inner := filepath.Join(outer, "a", "inner")
+
+	if err := os.MkdirAll(inner, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := Add(inner); err != nil {
+		t.Fatalf("Add inner: %v", err)
+	}
+
+	if err := Add(outer); !errors.Is(err, ErrNested) {
+		t.Fatalf("Add outer error = %v, want ErrNested", err)
+	}
+}
+
+func TestAddIgnoresAnUnregisteredEnclosingMarker(t *testing.T) {
+	isolate(t)
+	outer := workspaceDir(t, "outer")
+	inner := filepath.Join(outer, "inner")
+
+	if err := os.MkdirAll(filepath.Join(outer, marker), 0o755); err != nil {
+		t.Fatalf("mkdir marker: %v", err)
+	}
+	if err := os.MkdirAll(inner, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	if err := Add(inner); err != nil {
+		t.Fatalf("Add inner: %v", err)
+	}
+}
+
+func TestContainingPrefersTheInnermost(t *testing.T) {
+	isolate(t)
+	outer := workspaceDir(t, "outer")
+	inner := filepath.Join(outer, "inner")
+
+	if err := os.MkdirAll(inner, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := Add(outer); err != nil {
+		t.Fatalf("Add outer: %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(inner, marker), 0o755); err != nil {
+		t.Fatalf("mkdir marker: %v", err)
+	}
+	if err := write([]string{outer, inner}); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	got, ok := Containing(filepath.Join(inner, "deep"))
+	if !ok {
+		t.Fatal("Containing found nothing")
+	}
+	if got.Path != inner {
+		t.Errorf("Containing = %q, want %q", got.Path, inner)
+	}
+}
+
+func TestContainingIgnoresUnregisteredDirectories(t *testing.T) {
+	isolate(t)
+	loose := workspaceDir(t, "loose")
+
+	if err := os.MkdirAll(filepath.Join(loose, marker), 0o755); err != nil {
+		t.Fatalf("mkdir marker: %v", err)
+	}
+
+	if _, ok := Containing(loose); ok {
+		t.Error("Containing found an unregistered directory")
+	}
+}
+
+func TestAddStillAcceptsSiblings(t *testing.T) {
+	isolate(t)
+
+	for _, name := range []string{"one", "two"} {
+		dir := workspaceDir(t, name)
+		if err := Add(dir); err != nil {
+			t.Fatalf("Add %s: %v", name, err)
+		}
+	}
+}
+
+func TestAddIsStillIdempotent(t *testing.T) {
+	isolate(t)
+	dir := workspaceDir(t, "one")
+
+	if err := Add(dir); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := Add(dir); err != nil {
+		t.Fatalf("Add again: %v", err)
+	}
+}
+
+func TestNameOfFallsBackToTheBaseName(t *testing.T) {
+	isolate(t)
+	dir := workspaceDir(t, "unregistered")
+
+	if got := NameOf(dir); got != "unregistered" {
+		t.Errorf("NameOf = %q, want unregistered", got)
 	}
 }
