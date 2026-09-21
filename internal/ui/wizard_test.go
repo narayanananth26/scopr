@@ -923,3 +923,59 @@ func TestWindowSizeReachesTheScopeEditor(t *testing.T) {
 		t.Errorf("scope editor width = %d, want 33", got)
 	}
 }
+
+func TestWithPromptPutsTheCursorAtTheEnd(t *testing.T) {
+	w := atPrompt(t).WithPrompt("fix the build")
+
+	if w.promptAt != len("fix the build") {
+		t.Errorf("cursor = %d, want %d", w.promptAt, len("fix the build"))
+	}
+
+	w = w.Key("!")
+	if w.prompt != "fix the build!" {
+		t.Errorf("prompt = %q, want the keystroke appended", w.prompt)
+	}
+}
+
+func TestWithPromptCountsRunesNotBytes(t *testing.T) {
+	w := atPrompt(t).WithPrompt("héllo")
+
+	if w.promptAt != 5 {
+		t.Errorf("cursor = %d, want 5", w.promptAt)
+	}
+
+	w = w.Key("left").Key("x")
+	if w.prompt != "héllxo" {
+		t.Errorf("prompt = %q, want x before the last rune", w.prompt)
+	}
+}
+
+func TestWithPromptCanBeCleared(t *testing.T) {
+	w := atPrompt(t).WithPrompt("abc")
+	for range 3 {
+		w = w.Key("backspace")
+	}
+
+	if w.Prompt() != "" {
+		t.Errorf("prompt = %q, want it cleared", w.Prompt())
+	}
+}
+
+func TestWithPromptEmptyLeavesTheWizardAlone(t *testing.T) {
+	w := atPrompt(t).WithPrompt("")
+
+	if w.prompt != "" || w.promptAt != 0 {
+		t.Errorf("prompt = %q at %d, want empty", w.prompt, w.promptAt)
+	}
+}
+
+func TestWithPromptSurvivesToTheEnd(t *testing.T) {
+	w := atPrompt(t).WithPrompt("fix the build").Key("enter")
+
+	if !w.Done() {
+		t.Fatal("wizard not done")
+	}
+	if w.Prompt() != "fix the build" {
+		t.Errorf("prompt = %q, want it carried through", w.Prompt())
+	}
+}

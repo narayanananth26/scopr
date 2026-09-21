@@ -138,6 +138,12 @@ func (w Wizard) Repos() []string { return w.scope.Result() }
 
 func (w Wizard) Prompt() string { return strings.TrimSpace(w.prompt) }
 
+func (w Wizard) WithPrompt(s string) Wizard {
+	w.prompt = s
+	w.promptAt = len([]rune(s))
+	return w
+}
+
 func (w Wizard) Done() bool { return w.step == stepDone && !w.Cancelled }
 
 func (w Wizard) existingScope() bool {

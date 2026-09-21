@@ -245,6 +245,7 @@ func runWizard(a cli.Args) int {
 	)
 
 	wiz.LoadFiles = taggableFiles
+	wiz = wiz.WithPrompt(a.Str("prompt"))
 
 	w, err := ui.RunWizard(wiz)
 	if errors.Is(err, ui.ErrNoTTY) {
@@ -273,12 +274,7 @@ func runWizard(a cli.Args) int {
 		fmt.Fprintf(os.Stderr, "saved %s%s\n", scope.Prefix, name)
 	}
 
-	prompt := a.Str("prompt")
-	if p := w.Prompt(); p != "" {
-		prompt = p
-	}
-
-	return launchIn(a, root, repos, label(a, repos, w.Label()), prompt)
+	return launchIn(a, root, repos, label(a, repos, w.Label()), w.Prompt())
 }
 
 func wizardEntries(a cli.Args) ([]ui.Space, []ui.Entry, error) {
