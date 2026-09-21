@@ -11,7 +11,14 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-var ErrCancelled = errors.New("selection cancelled")
+var (
+	ErrCancelled = errors.New("selection cancelled")
+	ErrNoTTY     = errors.New("no terminal")
+)
+
+func interactive() bool {
+	return isTerminal(os.Stdin) && isTerminal(os.Stderr)
+}
 
 var renderer = lipgloss.NewRenderer(os.Stderr)
 
@@ -131,6 +138,10 @@ func (m Model) viewAdd() string {
 }
 
 func Run(m Model) ([]string, error) {
+	if !interactive() {
+		return nil, ErrNoTTY
+	}
+
 	out, err := tea.NewProgram(m, tea.WithOutput(os.Stderr), tea.WithAltScreen()).Run()
 	if err != nil {
 		return nil, fmt.Errorf("run editor: %w", err)

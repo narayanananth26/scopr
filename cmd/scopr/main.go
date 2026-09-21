@@ -269,6 +269,11 @@ func runRename(a cli.Args) int {
 	return 0
 }
 
+func noTTY(what string) int {
+	fmt.Fprintf(os.Stderr, "%s needs a terminal; name the repositories instead: scopr <@scope|repo>...\n", what)
+	return 2
+}
+
 func runWizard(a cli.Args) int {
 	spaces, entries, err := wizardEntries(a)
 	if err != nil {
@@ -294,6 +299,9 @@ func runWizard(a cli.Args) int {
 	wiz.LoadFiles = taggableFiles
 
 	w, err := ui.RunWizard(wiz)
+	if errors.Is(err, ui.ErrNoTTY) {
+		return noTTY("scopr")
+	}
 	if errors.Is(err, ui.ErrCancelled) {
 		return 0
 	}
@@ -482,6 +490,9 @@ func runInfer(a cli.Args) int {
 	scoped := picker.Scope{Header: "suggested for: " + task}
 
 	switch {
+	case errors.Is(err, ui.ErrNoTTY):
+		return noTTY("scopr infer")
+
 	case errors.Is(err, ui.ErrCancelled):
 		return 0
 
@@ -501,6 +512,9 @@ func runInfer(a cli.Args) int {
 	}
 
 	repos, err := picker.Edit(root, scoped)
+	if errors.Is(err, ui.ErrNoTTY) {
+		return noTTY("scopr infer")
+	}
 	if errors.Is(err, picker.ErrCancelled) {
 		return 0
 	}
