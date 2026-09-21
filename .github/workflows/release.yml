@@ -1,4 +1,4 @@
-name: Tap
+name: Release
 
 on:
   push:
@@ -11,10 +11,10 @@ on:
         required: true
 
 jobs:
-  update:
+  build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,7 +41,43 @@ jobs:
             echo "version=${tag#v}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Hash the release tarball
+      - name: Build every platform
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          mkdir -p dist
+          for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
+            os="${target%/*}"
+            arch="${target#*/}"
+            stage="dist/scopr_${VERSION}_${os}_${arch}"
+
+            mkdir -p "$stage"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
+              go build -ldflags "-s -w -X main.version=$VERSION" -o "$stage/scopr" ./cmd/scopr
+            cp LICENSE README.md "$stage/"
+            cp completions/_scopr "$stage/"
+
+            tar -czf "$stage.tar.gz" -C dist "$(basename "$stage")"
+            rm -rf "$stage"
+          done
+
+          cd dist && sha256sum ./*.tar.gz | sed 's| \./| |' > checksums.txt && cat checksums.txt
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --title "scopr $VERSION" \
+              --generate-notes
+          fi
+
+      - name: Hash the source tarball
         id: tarball
         env:
           REPO: ${{ github.repository }}
