@@ -2,6 +2,7 @@ package scope_test
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -206,5 +207,54 @@ func TestAmbiguousScopeInExpansionErrors(t *testing.T) {
 	_, err := scope.ResolveArgs(root, []string{"@web"})
 	if !errors.Is(err, scopefile.ErrAmbiguous) {
 		t.Fatalf("ResolveArgs error = %v, want ErrAmbiguous", err)
+	}
+}
+
+func TestStoredPathOutlivesALaterNamesake(t *testing.T) {
+	root := fixture(t)
+	mkdir(t, root, "tools/.git")
+	saved(t, root, "kit", "tools")
+	mkdir(t, root, "apps/tools/.git")
+
+	got, err := scope.ResolveArgs(root, []string{"@kit"})
+	if err != nil {
+		t.Fatalf("ResolveArgs: %v", err)
+	}
+	if want := filepath.Join(root, "tools"); got.Primary().Path != want {
+		t.Errorf("Primary = %q, want %q", got.Primary().Path, want)
+	}
+}
+
+func TestTypedNameIgnoresTheExactPath(t *testing.T) {
+	root := fixture(t)
+	mkdir(t, root, "tools/.git")
+	mkdir(t, root, "apps/tools/.git")
+
+	if _, err := scope.ResolveArgs(root, []string{"tools"}); !errors.Is(err, repo.ErrAmbiguous) {
+		t.Fatalf("ResolveArgs error = %v, want ErrAmbiguous", err)
+	}
+}
+
+func TestPathsAreRootRelative(t *testing.T) {
+	root := fixture(t)
+
+	s, err := scope.Resolve(root, []string{"api", "shared"})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	got, err := s.Paths()
+	if err != nil {
+		t.Fatalf("Paths: %v", err)
+	}
+	if want := []string{"services/api", "apps/shared"}; !slices.Equal(got, want) {
+		t.Errorf("Paths = %v, want %v", got, want)
+	}
+}
+
+func mkdir(t *testing.T, root, dir string) {
+	t.Helper()
+
+	if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", dir, err)
 	}
 }

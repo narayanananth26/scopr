@@ -3,6 +3,7 @@ package scope
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 
 	"scopr/internal/registry"
 	"scopr/internal/repo"
@@ -21,6 +22,18 @@ type Scope struct {
 func (s Scope) Primary() repo.Repo { return s.Repos[0] }
 
 func (s Scope) Others() []repo.Repo { return s.Repos[1:] }
+
+func (s Scope) Paths() ([]string, error) {
+	out := make([]string, 0, len(s.Repos))
+	for _, r := range s.Repos {
+		rel, err := filepath.Rel(s.Root, r.Path)
+		if err != nil {
+			return nil, fmt.Errorf("relative path for %q: %w", r.Path, err)
+		}
+		out = append(out, filepath.ToSlash(rel))
+	}
+	return out, nil
+}
 
 type named struct {
 	name string
@@ -58,8 +71,12 @@ func resolveNamed(root string, names []named) (Scope, error) {
 	}
 
 	byPath := make(map[string]repo.Repo, len(repos))
+	byRel := make(map[string]string, len(repos))
 	for _, r := range repos {
 		byPath[r.Path] = r
+		if rel, err := filepath.Rel(root, r.Path); err == nil {
+			byRel[filepath.ToSlash(rel)] = r.Path
+		}
 	}
 
 	var (
@@ -69,10 +86,13 @@ func resolveNamed(root string, names []named) (Scope, error) {
 	)
 
 	for _, n := range names {
-		path, err := repo.ResolveIn(root, repos, n.name)
-		if err != nil {
-			problems = append(problems, n.attribute(err))
-			continue
+		path, exact := byRel[n.name]
+		if n.from == "" || !exact {
+			path, err = repo.ResolveIn(root, repos, n.name)
+			if err != nil {
+				problems = append(problems, n.attribute(err))
+				continue
+			}
 		}
 
 		if first, dup := seen[path]; dup {

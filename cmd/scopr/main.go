@@ -325,17 +325,24 @@ func runSave(a cli.Args) int {
 
 	name, repos := strings.TrimPrefix(a.Operands[0], scope.Prefix), a.Operands[1:]
 
-	if _, err := scope.ResolveArgs(root, repos); err != nil {
+	s, err := scope.ResolveArgs(root, repos)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 
-	if err := scopefile.Save(root, name, repos); err != nil {
+	paths, err := s.Paths()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 
-	fmt.Fprintf(os.Stderr, "saved %s%s in %s: %s\n", scope.Prefix, name, registry.NameOf(root), strings.Join(repos, " "))
+	if err := scopefile.Save(root, name, paths); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	fmt.Fprintf(os.Stderr, "saved %s%s in %s: %s\n", scope.Prefix, name, registry.NameOf(root), strings.Join(paths, " "))
 	return 0
 }
 
@@ -444,11 +451,17 @@ func runWizard(a cli.Args) int {
 	repos := w.Repos()
 
 	if name := w.Name(); name != "" {
-		if _, err := scope.Resolve(root, repos); err != nil {
+		s, err := scope.Resolve(root, repos)
+		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
-		if err := scopefile.Save(root, name, repos); err != nil {
+		paths, err := s.Paths()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if err := scopefile.Save(root, name, paths); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
