@@ -3,6 +3,7 @@ package resolve
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"scopr/internal/registry"
@@ -74,7 +75,8 @@ func Scope(opt Options, name string) ([]Hit, error) {
 		return []Hit{{Workspace: matches[0], Scope: resolved}}, nil
 	}
 
-	if w, ok := registry.Containing(opt.Cwd); ok {
+	chain := registry.Enclosing(opt.Cwd)
+	for _, w := range chain {
 		resolved, err := scopefile.One(w.Path, name)
 		if err == nil {
 			return []Hit{{Workspace: w, Scope: resolved}}, nil
@@ -91,6 +93,9 @@ func Scope(opt Options, name string) ([]Hit, error) {
 
 	var hits []Hit
 	for _, w := range live {
+		if slices.ContainsFunc(chain, func(c registry.Workspace) bool { return c.Path == w.Path }) {
+			continue
+		}
 		if resolved, ok := holds(w.Path, name); ok {
 			hits = append(hits, Hit{Workspace: w, Scope: resolved})
 		}

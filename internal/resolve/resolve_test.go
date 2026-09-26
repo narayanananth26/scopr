@@ -283,3 +283,76 @@ func TestAllSkipsUnregistered(t *testing.T) {
 		t.Errorf("All = %v, want nothing", hits)
 	}
 }
+
+func TestScopeLooksThroughAncestors(t *testing.T) {
+	isolate(t)
+	root := tempRoot(t)
+	parent := ws(t, root, "Ananth")
+	child := ws(t, root, "Ananth", "writing")
+	other := ws(t, root, "Other")
+
+	save(t, parent, "blog", "one")
+	save(t, other, "blog", "two")
+
+	hits, err := resolve.Scope(resolve.Options{Cwd: child}, "blog")
+	if err != nil {
+		t.Fatalf("Scope: %v", err)
+	}
+	if len(hits) != 1 || hits[0].Workspace.Path != parent {
+		t.Errorf("Scope = %v, want only the ancestor %q", hits, parent)
+	}
+}
+
+func TestScopeInnermostAncestorWins(t *testing.T) {
+	isolate(t)
+	root := tempRoot(t)
+	top := ws(t, root, "Ananth")
+	mid := ws(t, root, "Ananth", "work")
+	leaf := ws(t, root, "Ananth", "work", "client")
+
+	save(t, top, "blog", "one")
+	save(t, mid, "blog", "two")
+
+	hits, err := resolve.Scope(resolve.Options{Cwd: leaf}, "blog")
+	if err != nil {
+		t.Fatalf("Scope: %v", err)
+	}
+	if len(hits) != 1 || hits[0].Workspace.Path != mid {
+		t.Errorf("Scope = %v, want the nearest ancestor %q", hits, mid)
+	}
+}
+
+func TestScopeCloserShadowsAncestor(t *testing.T) {
+	isolate(t)
+	root := tempRoot(t)
+	parent := ws(t, root, "Ananth")
+	child := ws(t, root, "Ananth", "writing")
+
+	save(t, parent, "blog", "one")
+	save(t, child, "blog", "two")
+
+	hits, err := resolve.Scope(resolve.Options{Cwd: child}, "blog")
+	if err != nil {
+		t.Fatalf("Scope: %v", err)
+	}
+	if len(hits) != 1 || hits[0].Workspace.Path != child {
+		t.Errorf("Scope = %v, want the closer %q", hits, child)
+	}
+}
+
+func TestScopeFindsItInAChildFromTheParent(t *testing.T) {
+	isolate(t)
+	root := tempRoot(t)
+	parent := ws(t, root, "Ananth")
+	child := ws(t, root, "Ananth", "writing")
+
+	save(t, child, "drafts", "one")
+
+	hits, err := resolve.Scope(resolve.Options{Cwd: parent}, "drafts")
+	if err != nil {
+		t.Fatalf("Scope: %v", err)
+	}
+	if len(hits) != 1 || hits[0].Workspace.Path != child {
+		t.Errorf("Scope = %v, want the child %q", hits, child)
+	}
+}
