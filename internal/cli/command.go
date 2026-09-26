@@ -159,9 +159,9 @@ var Commands = &Command{
 		},
 		{
 			Name: "list",
-			Help: "list saved scopes",
+			Help: "list saved scopes in every workspace, or in one with -w",
 			Min:  0, Max: 0,
-			Accepts: flagset(Flags, "workspace", "json", "all"),
+			Accepts: flagset(Flags, "workspace", "json"),
 		},
 		{
 			Name: "show", Use: "@name",

@@ -153,11 +153,7 @@ func printScopes(entries []scopeEntry, width, indent int) {
 }
 
 func runList(a cli.Args) int {
-	if a.Bool("all") {
-		if a.Has("workspace") {
-			fmt.Fprintln(os.Stderr, "scopr list takes --all or --workspace, not both")
-			return 2
-		}
+	if !a.Has("workspace") {
 		return runListAll(a)
 	}
 

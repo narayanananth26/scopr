@@ -152,12 +152,12 @@ func TestArityStopsCandidates(t *testing.T) {
 
 func TestFlagsForTheResolvedCommand(t *testing.T) {
 	got := values(t, "list", "-")
-	has(t, got, "--workspace", "--json", "--all", "--help")
+	has(t, got, "--workspace", "--json", "--help")
 	lacks(t, got, "--prompt", "--verbose")
 
 	got = values(t, "infer", "-")
 	has(t, got, "--verbose", "--prompt")
-	lacks(t, got, "--json", "--all")
+	lacks(t, got, "--json")
 }
 
 func TestFlagValueForWorkspace(t *testing.T) {

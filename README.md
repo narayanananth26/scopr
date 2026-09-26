@@ -34,8 +34,8 @@ scopr gl-panel gl-api             start one from repositories directly
 scopr run list                    start one in a repository named like a command
 
 scopr infer "fix the flaky build" suggest a scope for the task, then start
-scopr list                        scopes in this workspace
-scopr list --all                  scopes in every workspace, grouped
+scopr list                        scopes in every workspace, grouped
+scopr list -w Goodlife            scopes in one workspace
 scopr show @surfaces              the repositories a scope names
 scopr save @surfaces gl-panel gl-api
 scopr rename @surfaces @edges
@@ -62,7 +62,6 @@ scopr --workspace Goodlife save @web gl-webapp
 | `-w, --workspace NAME` | which workspace to resolve against         |
 | `-p, --prompt TEXT`    | prompt to submit on start                  |
 | `-l, --label TEXT`     | name the session                           |
-| `-a, --all`            | every workspace, grouped                   |
 | `--json`               | machine-readable output                    |
 | `--verbose`            | with `infer`, show the survey's tool calls |
 

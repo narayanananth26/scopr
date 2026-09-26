@@ -362,7 +362,7 @@ func TestAllKeepsDeclarationOrder(t *testing.T) {
 		names = append(names, f.Name)
 	}
 
-	want := []string{"workspace", "prompt", "label", "verbose", "json", "all", "help", "protocol"}
+	want := []string{"workspace", "prompt", "label", "verbose", "json", "help", "protocol"}
 	if !slices.Equal(names, want) {
 		t.Errorf("names = %v, want %v", names, want)
 	}
