@@ -25,7 +25,7 @@ type Result struct {
 
 type Env struct {
 	Root       func(workspace string) string
-	Scopes     func(root string) []Candidate
+	Scopes     func(workspace string) []Candidate
 	Repos      func(root string) []Candidate
 	Workspaces func() []Candidate
 }
@@ -61,7 +61,7 @@ func Complete(env Env, argv []string) Result {
 
 	var kinds Result
 	if cmd.Max < 0 || len(rest) < cmd.Max {
-		kinds = forKind(env, env.Root(s.Str("workspace")), cmd.Kind(len(rest)))
+		kinds = forKind(env, s.Str("workspace"), cmd.Kind(len(rest)))
 	}
 
 	return keep(Result{Candidates: append(out, kinds.Candidates...), Files: kinds.Files}, prefix)
@@ -92,18 +92,18 @@ func values(env Env, f *cli.Flag) Result {
 	return Result{}
 }
 
-func forKind(env Env, root string, k cli.Kind) Result {
+func forKind(env Env, workspace string, k cli.Kind) Result {
 	switch k {
 	case cli.KindScope:
-		return Result{Candidates: stamp(env.Scopes(root), "scopes", scope.Prefix)}
+		return Result{Candidates: stamp(env.Scopes(workspace), "scopes", scope.Prefix)}
 
 	case cli.KindRepo:
-		return Result{Candidates: stamp(env.Repos(root), "repos", "")}
+		return Result{Candidates: stamp(env.Repos(env.Root(workspace)), "repos", "")}
 
 	case cli.KindMember:
 		return Result{Candidates: append(
-			stamp(env.Repos(root), "repos", ""),
-			stamp(env.Scopes(root), "scopes", scope.Prefix)...,
+			stamp(env.Repos(env.Root(workspace)), "repos", ""),
+			stamp(env.Scopes(workspace), "scopes", scope.Prefix)...,
 		)}
 
 	case cli.KindWorkspace:

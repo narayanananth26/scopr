@@ -951,17 +951,27 @@ func completeEnv() complete.Env {
 			return root
 		},
 
-		Scopes: func(root string) []complete.Candidate {
-			if root == "" {
+		Scopes: func(workspace string) []complete.Candidate {
+			spaces, err := registry.Live()
+			if workspace != "" {
+				spaces, err = registry.Lookup(workspace)
+			}
+			if err != nil || workspace != "" && len(spaces) > 1 {
 				return nil
 			}
-			entries, err := scopesIn(root)
-			if err != nil {
-				return nil
-			}
-			out := make([]complete.Candidate, 0, len(entries))
-			for _, e := range entries {
-				out = append(out, complete.Candidate{Value: e.Name, Desc: strings.Join(e.Repos, " ")})
+
+			var out []complete.Candidate
+			for _, w := range spaces {
+				entries, err := scopesIn(w.Path)
+				if err != nil {
+					continue
+				}
+				for _, e := range entries {
+					out = append(out, complete.Candidate{
+						Value: e.Name,
+						Desc:  "(" + w.Name + ") " + strings.Join(e.Repos, " "),
+					})
+				}
 			}
 			return out
 		},
