@@ -300,9 +300,17 @@ func isDir(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-// Containing is the innermost registered workspace holding dir. Registered
-// paths are symlink-resolved, so dir has to be too before comparing.
 func Containing(dir string) (Workspace, bool) {
+	all := Enclosing(dir)
+	if len(all) == 0 {
+		return Workspace{}, false
+	}
+	return all[0], true
+}
+
+// Enclosing is every registered workspace holding dir, innermost first.
+// Registered paths are symlink-resolved, so dir has to be too before comparing.
+func Enclosing(dir string) []Workspace {
 	if abs, err := filepath.Abs(dir); err == nil {
 		dir = abs
 	}
@@ -312,17 +320,16 @@ func Containing(dir string) (Workspace, bool) {
 
 	all, err := Live()
 	if err != nil {
-		return Workspace{}, false
+		return nil
 	}
 
-	var best Workspace
+	var out []Workspace
 	for _, w := range all {
-		if w.Path != dir && !under(dir, w.Path) {
-			continue
-		}
-		if best.Path == "" || len(w.Path) > len(best.Path) {
-			best = w
+		if w.Path == dir || under(dir, w.Path) {
+			out = append(out, w)
 		}
 	}
-	return best, best.Path != ""
+
+	slices.SortFunc(out, func(a, b Workspace) int { return len(b.Path) - len(a.Path) })
+	return out
 }

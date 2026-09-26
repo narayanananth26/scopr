@@ -577,3 +577,32 @@ func TestContainingResolvesSymlinks(t *testing.T) {
 		t.Errorf("Containing = %q, want %q", got.Path, real)
 	}
 }
+
+func TestEnclosingListsInnermostFirst(t *testing.T) {
+	isolate(t)
+	outer := workspaceDir(t, "outer")
+	mid := filepath.Join(outer, "mid")
+	inner := filepath.Join(mid, "inner")
+	sibling := workspaceDir(t, "sibling")
+
+	for _, dir := range []string{inner, sibling} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+	}
+	for _, dir := range []string{outer, inner, mid, sibling} {
+		if err := Add(dir); err != nil {
+			t.Fatalf("Add %s: %v", dir, err)
+		}
+	}
+
+	all := Enclosing(filepath.Join(inner, "deep"))
+
+	got := make([]string, len(all))
+	for i, w := range all {
+		got[i] = w.Path
+	}
+	if want := []string{inner, mid, outer}; !slices.Equal(got, want) {
+		t.Errorf("Enclosing = %v, want %v", got, want)
+	}
+}
