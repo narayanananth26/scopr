@@ -134,6 +134,19 @@ func Live() ([]Workspace, error) {
 	return out, nil
 }
 
+func LivePaths() ([]string, error) {
+	live, err := Live()
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]string, len(live))
+	for i, w := range live {
+		out[i] = w.Path
+	}
+	return out, nil
+}
+
 func Add(path string) error {
 	abs, err := filepath.Abs(path)
 	if err != nil {
