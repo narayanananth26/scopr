@@ -51,12 +51,11 @@ func findScopeRoot(a cli.Args, name string) (string, error) {
 	}
 	if len(hits) > 1 {
 		var b strings.Builder
-		fmt.Fprintf(&b, "%s%s is in more than one workspace:", scope.Prefix, name)
+		fmt.Fprintf(&b, "%s%s is in %d workspaces; pick one with -w:", scope.Prefix, name, len(hits))
 		for _, h := range hits {
-			fmt.Fprintf(&b, "\n  %s  %s", h.Workspace.Name, h.Workspace.Path)
+			fmt.Fprintf(&b, "\n  %s", a.Retry(h.Workspace.Name))
 		}
-		b.WriteString("\nname one with --workspace")
-		return "", fmt.Errorf("%w: %s", errAmbiguousWorkspace, b.String())
+		return "", &workspaceAmbiguity{b.String()}
 	}
 	return hits[0].Workspace.Path, nil
 }
@@ -237,7 +236,9 @@ func runListAll(a cli.Args) int {
 	return 0
 }
 
-var errAmbiguousWorkspace = errors.New("scope is in more than one workspace")
+type workspaceAmbiguity struct{ text string }
+
+func (e *workspaceAmbiguity) Error() string { return e.text }
 
 func reportScope(query string, err error) int {
 	var ambiguous *scopefile.AmbiguousError
@@ -252,7 +253,8 @@ func reportScope(query string, err error) int {
 	}
 
 	fmt.Fprintln(os.Stderr, err)
-	if errors.Is(err, errAmbiguousWorkspace) {
+	var spread *workspaceAmbiguity
+	if errors.As(err, &spread) {
 		return 2
 	}
 	return 1
