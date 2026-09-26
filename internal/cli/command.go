@@ -207,7 +207,13 @@ var Commands = &Command{
 			Children: []*Command{
 				{Name: "list", Help: "list registered workspaces", Min: 0, Max: 0, Accepts: flagset(Flags, "json")},
 				{Name: "add", Use: "[path]", Help: "register a workspace", Operands: []Kind{KindPath}, Min: 0, Max: 1},
-				{Name: "remove", Use: "<name>", Help: "forget a workspace", Operands: []Kind{KindWorkspace}, Min: 1, Max: 1},
+				{
+					Name: "remove", Use: "<name>",
+					Help:     "forget a workspace and delete its scopes",
+					Operands: []Kind{KindWorkspace},
+					Min:      1, Max: 1,
+					Accepts: flagset(Flags, "force"),
+				},
 			},
 		},
 		{Name: "help", Use: "[command]", Help: "show usage for a command", Operands: []Kind{KindCommand}, Min: 0, Max: 1},

@@ -809,13 +809,52 @@ func runWorkspaceRemove(a cli.Args) int {
 		return 2
 	}
 
-	if err := registry.Remove(matches[0].Path); err != nil {
+	w := matches[0]
+
+	scopes, err := scopefile.List(w.Path)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	fmt.Fprintf(os.Stderr, "removed %s\n", matches[0].Path)
-	fmt.Fprintf(os.Stderr, "its scopes stay in %s\n", filepath.Join(matches[0].Path, ".scopr"))
+
+	if len(scopes) > 0 && !a.Bool("force") {
+		ok, err := ui.Confirm(fmt.Sprintf("remove %s and delete %s?", w.Name, count(len(scopes), "scope")))
+		if errors.Is(err, ui.ErrNoTTY) {
+			fmt.Fprintf(os.Stderr, "%s has %s; remove it with --force to delete them\n", w.Name, count(len(scopes), "scope"))
+			return 2
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if !ok {
+			fmt.Fprintln(os.Stderr, "cancelled")
+			return 0
+		}
+	}
+
+	if err := registry.Remove(w.Path); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := os.RemoveAll(filepath.Join(w.Path, ".scopr")); err != nil {
+		fmt.Fprintf(os.Stderr, "removed %s, but its scopes are still there: %v\n", w.Name, err)
+		return 1
+	}
+
+	if len(scopes) == 0 {
+		fmt.Fprintf(os.Stderr, "removed %s\n", w.Name)
+	} else {
+		fmt.Fprintf(os.Stderr, "removed %s, deleted %s\n", w.Name, count(len(scopes), "scope"))
+	}
 	return 0
+}
+
+func count(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 func line(path []string, c *cli.Command) string {
