@@ -500,3 +500,36 @@ func find(c *cli.Command, name string) (*cli.Command, bool) {
 	}
 	return nil, false
 }
+
+func TestRetryPinsTheWorkspace(t *testing.T) {
+	a := parsed(t, "@blog", "site")
+
+	if got, want := a.Retry("writing"), "scopr -w writing @blog site"; got != want {
+		t.Errorf("Retry = %q, want %q", got, want)
+	}
+}
+
+func TestRetryReplacesAGivenWorkspace(t *testing.T) {
+	a := parsed(t, "run", "--workspace", "old", "@blog")
+
+	if got, want := a.Retry("new"), "scopr -w new run @blog"; got != want {
+		t.Errorf("Retry = %q, want %q", got, want)
+	}
+}
+
+func TestRetryKeepsFlagsAndQuotes(t *testing.T) {
+	a := parsed(t, "@blog", "--prompt", "fix Ananth's build", "-l", "x")
+
+	want := `scopr -w Ananth -p 'fix Ananth'\''s build' -l x @blog`
+	if got := a.Retry("Ananth"); got != want {
+		t.Errorf("Retry = %q, want %q", got, want)
+	}
+}
+
+func TestRetryTerminatesBeforeADashedOperand(t *testing.T) {
+	a := parsed(t, "@blog", "--", "-odd")
+
+	if got, want := a.Retry("w"), "scopr -w w -- @blog -odd"; got != want {
+		t.Errorf("Retry = %q, want %q", got, want)
+	}
+}

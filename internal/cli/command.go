@@ -83,6 +83,50 @@ func (a Args) Use() string {
 	return strings.Join(append([]string{"scopr"}, a.Path...), " ")
 }
 
+// Retry is the invocation as parsed, pinned to workspace, ready to paste.
+func (a Args) Retry(workspace string) string {
+	parts := append([]string{"scopr", "-w", quote(workspace)}, a.Path...)
+
+	for _, o := range a.Given {
+		if o.Flag.Name == "workspace" {
+			continue
+		}
+
+		spelled := "--" + o.Flag.Name
+		if o.Flag.Short != "" {
+			spelled = "-" + o.Flag.Short
+		}
+
+		switch {
+		case !o.Flag.Bool():
+			parts = append(parts, spelled, quote(o.Value))
+		case o.Value == "true":
+			parts = append(parts, spelled)
+		default:
+			parts = append(parts, "--"+o.Flag.Name+"="+o.Value)
+		}
+	}
+
+	if slices.ContainsFunc(a.Operands, func(o string) bool { return strings.HasPrefix(o, "-") }) {
+		parts = append(parts, "--")
+	}
+	for _, o := range a.Operands {
+		parts = append(parts, quote(o))
+	}
+
+	return strings.Join(parts, " ")
+}
+
+func quote(s string) string {
+	safe := s != "" && !strings.ContainsFunc(s, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("@%_+=:,./-", r))
+	})
+	if safe {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 func flagset(t *Table, names ...string) []*Flag {
 	out := make([]*Flag, 0, len(names))
 	for _, n := range names {
