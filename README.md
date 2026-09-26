@@ -44,7 +44,7 @@ scopr where                       the workspace you are in
 
 scopr workspace add .             register a directory as a workspace
 scopr workspace list
-scopr workspace remove Goodlife
+scopr workspace remove Goodlife   forget one and delete its scopes
 ```
 
 A scope is always written with `@`. The first repository in a scope becomes the
@@ -63,6 +63,7 @@ scopr --workspace Goodlife save @web gl-webapp
 | `-p, --prompt TEXT`    | prompt to submit on start                  |
 | `-l, --label TEXT`     | name the session                           |
 | `--json`               | machine-readable output                    |
+| `--force`              | with `workspace remove`, skip the question |
 | `--verbose`            | with `infer`, show the survey's tool calls |
 
 Run `scopr help <command>` for one command's usage and the flags it takes.
