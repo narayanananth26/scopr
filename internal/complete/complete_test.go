@@ -15,7 +15,7 @@ func env() complete.Env {
 			}
 			return "/w/here"
 		},
-		Scopes: func(root string) []complete.Candidate {
+		Scopes: func(workspace string) []complete.Candidate {
 			return []complete.Candidate{
 				{Value: "surfaces", Desc: "gl-panel gl-api"},
 				{Value: "webapp", Desc: "gl-webapp"},
@@ -194,19 +194,39 @@ func TestInferOffersNothing(t *testing.T) {
 	}
 }
 
-func TestWorkspaceFlagPicksTheRoot(t *testing.T) {
-	var asked string
+func TestWorkspaceFlagNarrowsScopes(t *testing.T) {
+	asked := "unset"
 
 	e := env()
-	e.Scopes = func(root string) []complete.Candidate {
-		asked = root
+	e.Scopes = func(workspace string) []complete.Candidate {
+		asked = workspace
 		return nil
 	}
 
 	complete.Complete(e, []string{"-w", "Goodlife", "show", ""})
+	if asked != "Goodlife" {
+		t.Errorf("scopes read from %q, want Goodlife", asked)
+	}
+
+	complete.Complete(e, []string{"show", ""})
+	if asked != "" {
+		t.Errorf("scopes read from %q, want every workspace", asked)
+	}
+}
+
+func TestWorkspaceFlagPicksTheRepoRoot(t *testing.T) {
+	var asked string
+
+	e := env()
+	e.Repos = func(root string) []complete.Candidate {
+		asked = root
+		return nil
+	}
+
+	complete.Complete(e, []string{"-w", "Goodlife", "save", "@new", ""})
 
 	if asked != "/w/Goodlife" {
-		t.Errorf("scopes read from %q, want /w/Goodlife", asked)
+		t.Errorf("repos read from %q, want /w/Goodlife", asked)
 	}
 }
 
