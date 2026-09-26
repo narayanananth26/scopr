@@ -14,6 +14,17 @@ type Candidate struct {
 	// Group tags the candidate for the shell, which uses it to label and
 	// preview each kind separately.
 	Group string
+
+	// Pin is the workspace to name with -w when the bare value would resolve
+	// elsewhere.
+	Pin string
+}
+
+func (c Candidate) Insert() string {
+	if c.Pin == "" {
+		return c.Value
+	}
+	return cli.Quote(c.Value) + " -w " + cli.Quote(c.Pin)
 }
 
 type Result struct {
@@ -25,7 +36,7 @@ type Result struct {
 
 type Env struct {
 	Root       func(workspace string) string
-	Scopes     func(workspace string) []Candidate
+	Scopes     func(workspace string, local bool) []Candidate
 	Repos      func(root string) []Candidate
 	Workspaces func() []Candidate
 }
@@ -61,7 +72,7 @@ func Complete(env Env, argv []string) Result {
 
 	var kinds Result
 	if cmd.Max < 0 || len(rest) < cmd.Max {
-		kinds = forKind(env, s.Str("workspace"), cmd.Kind(len(rest)))
+		kinds = forKind(env, s.Str("workspace"), cmd.Writes, cmd.Kind(len(rest)))
 	}
 
 	return keep(Result{Candidates: append(out, kinds.Candidates...), Files: kinds.Files}, prefix)
@@ -92,10 +103,10 @@ func values(env Env, f *cli.Flag) Result {
 	return Result{}
 }
 
-func forKind(env Env, workspace string, k cli.Kind) Result {
+func forKind(env Env, workspace string, local bool, k cli.Kind) Result {
 	switch k {
 	case cli.KindScope:
-		return Result{Candidates: stamp(env.Scopes(workspace), "scopes", scope.Prefix)}
+		return Result{Candidates: stamp(env.Scopes(workspace, local), "scopes", scope.Prefix)}
 
 	case cli.KindRepo:
 		return Result{Candidates: stamp(env.Repos(env.Root(workspace)), "repos", "")}
@@ -103,7 +114,7 @@ func forKind(env Env, workspace string, k cli.Kind) Result {
 	case cli.KindMember:
 		return Result{Candidates: append(
 			stamp(env.Repos(env.Root(workspace)), "repos", ""),
-			stamp(env.Scopes(workspace), "scopes", scope.Prefix)...,
+			stamp(env.Scopes(workspace, local), "scopes", scope.Prefix)...,
 		)}
 
 	case cli.KindWorkspace:
@@ -121,7 +132,7 @@ func forKind(env Env, workspace string, k cli.Kind) Result {
 func stamp(in []Candidate, group, prefix string) []Candidate {
 	out := make([]Candidate, 0, len(in))
 	for _, c := range in {
-		out = append(out, Candidate{prefix + c.Value, c.Desc, group})
+		out = append(out, Candidate{Value: prefix + c.Value, Desc: c.Desc, Group: group, Pin: c.Pin})
 	}
 	return out
 }
@@ -132,7 +143,7 @@ func children(c *cli.Command) []Candidate {
 		if k.Help == "" {
 			continue
 		}
-		out = append(out, Candidate{k.Name, k.Help, "commands"})
+		out = append(out, Candidate{Value: k.Name, Desc: k.Help, Group: "commands"})
 	}
 	return out
 }
@@ -143,7 +154,7 @@ func flags(c *cli.Command) Result {
 		if f.Name != "help" && !accepts(c, f.Name) {
 			continue
 		}
-		out = append(out, Candidate{"--" + f.Name, f.Help, "flags"})
+		out = append(out, Candidate{Value: "--" + f.Name, Desc: f.Help, Group: "flags"})
 	}
 	return Result{Candidates: out}
 }

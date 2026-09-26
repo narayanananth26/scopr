@@ -33,6 +33,7 @@ type Command struct {
 	Min      int
 	Max      int
 	FreeText bool
+	Writes   bool
 }
 
 // Kind is what belongs at operand i. The last entry repeats, so a command
@@ -85,7 +86,7 @@ func (a Args) Use() string {
 
 // Retry is the invocation as parsed, pinned to workspace, ready to paste.
 func (a Args) Retry(workspace string) string {
-	parts := append(append([]string{"scopr"}, a.Path...), "-w", quote(workspace))
+	parts := append(append([]string{"scopr"}, a.Path...), "-w", Quote(workspace))
 
 	for _, o := range a.Given {
 		if o.Flag.Name == "workspace" {
@@ -99,7 +100,7 @@ func (a Args) Retry(workspace string) string {
 
 		switch {
 		case !o.Flag.Bool():
-			parts = append(parts, spelled, quote(o.Value))
+			parts = append(parts, spelled, Quote(o.Value))
 		case o.Value == "true":
 			parts = append(parts, spelled)
 		default:
@@ -111,13 +112,13 @@ func (a Args) Retry(workspace string) string {
 		parts = append(parts, "--")
 	}
 	for _, o := range a.Operands {
-		parts = append(parts, quote(o))
+		parts = append(parts, Quote(o))
 	}
 
 	return strings.Join(parts, " ")
 }
 
-func quote(s string) string {
+func Quote(s string) string {
 	safe := s != "" && !strings.ContainsFunc(s, func(r rune) bool {
 		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("@%_+=:,./-", r))
 	})
@@ -183,6 +184,7 @@ var Commands = &Command{
 			Operands: []Kind{KindScope},
 			Min:      1, Max: 1,
 			Accepts: flagset(Flags, "workspace"),
+			Writes:  true,
 		},
 		{
 			Name: "rename", Use: "@old @new",
@@ -190,6 +192,7 @@ var Commands = &Command{
 			Operands: []Kind{KindScope, KindNewScope},
 			Min:      2, Max: 2,
 			Accepts: flagset(Flags, "workspace"),
+			Writes:  true,
 		},
 		{
 			Name: "where",

@@ -12,15 +12,15 @@ _scopr() {
   words_to_complete=("${(@)words[2,CURRENT]}")
 
   local raw
-  raw="$(scopr __complete --protocol 1 -- "${(@)words_to_complete}" 2>/dev/null)" || return 1
+  raw="$(scopr __complete --protocol 2 -- "${(@)words_to_complete}" 2>/dev/null)" || return 1
   [[ -n $raw ]] || return 1
 
   local -a lines
   lines=("${(@f)raw}")
 
-  local -A grouped
+  local -A grouped quoted
   local -i directive=0
-  local line value desc group
+  local line value desc group raw
 
   for line in "${lines[@]}"; do
     if [[ $line == ':'<-> ]]; then
@@ -33,18 +33,29 @@ _scopr() {
 
     line=${line#*$'\t'}
     desc=${line%%$'\t'*}
-    group=${line#*$'\t'}
+    line=${line#*$'\t'}
+    group=${line%%$'\t'*}
+    raw=${line#*$'\t'}
     [[ -n $group ]] || group=candidates
 
-    grouped[$group]+="${value//:/\\:}:${desc}"$'\n'
+    if [[ $raw == raw ]]; then
+      quoted[$group]+="${value//:/\\:}:${desc}"$'\n'
+    else
+      grouped[$group]+="${value//:/\\:}:${desc}"$'\n'
+    fi
   done
 
   local -i shown=0
+  local -a entries
   for group in "${(@k)grouped}"; do
-    local -a entries
     entries=("${(@f)${grouped[$group]%$'\n'}}")
     (( ${#entries} )) || continue
     _describe -t "$group" "$group" entries && shown=1
+  done
+  for group in "${(@k)quoted}"; do
+    entries=("${(@f)${quoted[$group]%$'\n'}}")
+    (( ${#entries} )) || continue
+    _describe -t "$group" "$group" entries -Q && shown=1
   done
 
   if (( directive & 1 )); then

@@ -935,7 +935,7 @@ func runCompletion(a cli.Args) int {
 	return 2
 }
 
-const completeProtocol = "1"
+const completeProtocol = "2"
 
 func completeEnv() complete.Env {
 	return complete.Env{
@@ -951,13 +951,27 @@ func completeEnv() complete.Env {
 			return root
 		},
 
-		Scopes: func(workspace string) []complete.Candidate {
+		Scopes: func(workspace string, local bool) []complete.Candidate {
 			spaces, err := registry.Live()
 			if workspace != "" {
 				spaces, err = registry.Lookup(workspace)
 			}
 			if err != nil || workspace != "" && len(spaces) > 1 {
 				return nil
+			}
+
+			cwd, _ := os.Getwd()
+			here, _ := resolve.One(resolve.Options{Cwd: cwd})
+
+			wins := func(w registry.Workspace, name string) bool {
+				if workspace != "" {
+					return true
+				}
+				if local {
+					return w.Path == here
+				}
+				hits, err := resolve.Scope(resolve.Options{Cwd: cwd}, name)
+				return err == nil && len(hits) == 1 && hits[0].Workspace.Path == w.Path && hits[0].Scope == name
 			}
 
 			var out []complete.Candidate
@@ -967,10 +981,14 @@ func completeEnv() complete.Env {
 					continue
 				}
 				for _, e := range entries {
-					out = append(out, complete.Candidate{
+					c := complete.Candidate{
 						Value: e.Name,
 						Desc:  "(" + w.Name + ") " + strings.Join(e.Repos, " "),
-					})
+					}
+					if !wins(w, e.Name) {
+						c.Pin = w.Name
+					}
+					out = append(out, c)
 				}
 			}
 			return out
@@ -1016,7 +1034,11 @@ func runComplete(a cli.Args) int {
 
 	var b strings.Builder
 	for _, c := range r.Candidates {
-		fmt.Fprintf(&b, "%s\t%s\t%s\n", c.Value, c.Desc, c.Group)
+		raw := ""
+		if c.Pin != "" {
+			raw = "raw"
+		}
+		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\n", c.Insert(), c.Desc, c.Group, raw)
 	}
 	if r.Files {
 		b.WriteString(":1\n")
