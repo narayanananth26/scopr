@@ -60,7 +60,7 @@ func rels(t *testing.T, root string, repos []repo.Repo) []string {
 func listRels(t *testing.T, root string) []string {
 	t.Helper()
 
-	repos, err := repo.List(root)
+	repos, err := repo.List(root, nil)
 	if err != nil {
 		t.Fatalf("List(%q): %v", root, err)
 	}
@@ -154,7 +154,7 @@ func TestSortedByPath(t *testing.T) {
 func TestResolvesUniqueBaseName(t *testing.T) {
 	root := fixture(t)
 
-	got, err := repo.Resolve(root, "api")
+	got, err := repo.Resolve(root, nil, "api")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestResolvesUniqueBaseName(t *testing.T) {
 func TestResolveAmbiguousErrors(t *testing.T) {
 	root := fixture(t)
 
-	got, err := repo.Resolve(root, "web")
+	got, err := repo.Resolve(root, nil, "web")
 	if !errors.Is(err, repo.ErrAmbiguous) {
 		t.Fatalf("Resolve error = %v, want ErrAmbiguous", err)
 	}
@@ -186,7 +186,7 @@ func TestResolveAmbiguousErrors(t *testing.T) {
 func TestResolveByRelativePath(t *testing.T) {
 	root := fixture(t)
 
-	got, err := repo.Resolve(root, filepath.Join("apps", "web"))
+	got, err := repo.Resolve(root, nil, filepath.Join("apps", "web"))
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestResolveByRelativePath(t *testing.T) {
 func TestResolveUnknownName(t *testing.T) {
 	root := fixture(t)
 
-	if _, err := repo.Resolve(root, "nope"); !errors.Is(err, repo.ErrNoSuchRepo) {
+	if _, err := repo.Resolve(root, nil, "nope"); !errors.Is(err, repo.ErrNoSuchRepo) {
 		t.Fatalf("Resolve error = %v, want ErrNoSuchRepo", err)
 	}
 }
@@ -215,5 +215,89 @@ func TestResolveInUsesGivenListing(t *testing.T) {
 	}
 	if want := filepath.Join(root, "apps", "panel"); got != want {
 		t.Errorf("ResolveIn = %q, want %q", got, want)
+	}
+}
+
+func nested(t *testing.T) (string, []string) {
+	t.Helper()
+
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolving temp dir: %v", err)
+	}
+
+	dirs := []string{
+		"work/.git",
+		"work/api/.git",
+		"deep/a/b/c/x/y/z/w/v/u",
+		"mono/.git",
+		"mono/ws/svc/.git",
+		"mono/other",
+	}
+	for _, d := range dirs {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+
+	workspaces := []string{
+		filepath.Join(root, "work"),
+		filepath.Join(root, "deep/a/b/c/x"),
+		filepath.Join(root, "mono/ws"),
+		filepath.Join(filepath.Dir(root), "elsewhere"),
+	}
+	return root, workspaces
+}
+
+func listNested(t *testing.T) []string {
+	t.Helper()
+
+	root, workspaces := nested(t)
+	repos, err := repo.List(root, workspaces)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	return rels(t, root, repos)
+}
+
+func TestSkipsRegisteredWorkspaceRoots(t *testing.T) {
+	got := listNested(t)
+
+	for _, ws := range []string{"work", "deep/a/b/c/x", "mono/ws"} {
+		if slices.Contains(got, ws) {
+			t.Errorf("List returned workspace root %q; got %v", ws, got)
+		}
+	}
+}
+
+func TestListsReposInsideChildWorkspaces(t *testing.T) {
+	got := listNested(t)
+
+	if !slices.Contains(got, "work/api") {
+		t.Errorf("List missing repo inside a child workspace; got %v", got)
+	}
+}
+
+func TestDepthRestartsAtChildWorkspace(t *testing.T) {
+	got := listNested(t)
+
+	if !slices.Contains(got, "deep/a/b/c/x/y/z/w/v") {
+		t.Errorf("depth 4 below a child workspace should be listed; got %v", got)
+	}
+	if slices.Contains(got, "deep/a/b/c/x/y/z/w/v/u") {
+		t.Errorf("depth 5 below a child workspace should not be listed; got %v", got)
+	}
+}
+
+func TestReachesChildWorkspaceInsideRepo(t *testing.T) {
+	got := listNested(t)
+
+	for _, want := range []string{"mono", "mono/ws/svc"} {
+		if !slices.Contains(got, want) {
+			t.Errorf("List missing %q; got %v", want, got)
+		}
+	}
+	if slices.Contains(got, "mono/other") {
+		t.Errorf("List descended into a repo beyond the path to a workspace; got %v", got)
 	}
 }

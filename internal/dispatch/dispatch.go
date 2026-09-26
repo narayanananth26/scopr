@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"scopr/internal/registry"
 	"scopr/internal/repo"
 )
 
@@ -63,7 +64,12 @@ func infer(ctx context.Context, cfg Config, exec runner) ([]Suggestion, error) {
 		return nil, errors.New("dispatch: empty task")
 	}
 
-	repos, err := repo.List(cfg.Root)
+	workspaces, err := registry.LivePaths()
+	if err != nil {
+		return nil, err
+	}
+
+	repos, err := repo.List(cfg.Root, workspaces)
 	if err != nil {
 		return nil, err
 	}

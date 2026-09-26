@@ -124,7 +124,7 @@ func TestEmptyTaskErrors(t *testing.T) {
 
 func TestArgsCarryRequiredFlags(t *testing.T) {
 	root := fixture(t)
-	repos, err := repo.List(root)
+	repos, err := repo.List(root, nil)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestArgsCarryRequiredFlags(t *testing.T) {
 
 func TestArgsOmitAppendSystemPrompt(t *testing.T) {
 	root := fixture(t)
-	repos, _ := repo.List(root)
+	repos, _ := repo.List(root, nil)
 
 	if slices.Contains(Args(Config{Root: root, Task: "x"}, repos), "--append-system-prompt") {
 		t.Error("--append-system-prompt must not be passed to the survey")
@@ -172,7 +172,7 @@ func TestEnvDisablesAmbientClaudeMd(t *testing.T) {
 
 func TestPromptListsReposAndTask(t *testing.T) {
 	root := fixture(t)
-	repos, _ := repo.List(root)
+	repos, _ := repo.List(root, nil)
 
 	got := prompt(Config{Root: root, Task: "trace the checkout call"}, repos)
 
@@ -207,7 +207,7 @@ func TestContextCancellationPropagates(t *testing.T) {
 
 func TestArgsWithoutTraceUseJSON(t *testing.T) {
 	root := fixture(t)
-	repos, _ := repo.List(root)
+	repos, _ := repo.List(root, nil)
 
 	got := Args(Config{Root: root, Task: "x"}, repos)
 
@@ -222,7 +222,7 @@ func TestArgsWithoutTraceUseJSON(t *testing.T) {
 
 func TestArgsWithTraceStream(t *testing.T) {
 	root := fixture(t)
-	repos, _ := repo.List(root)
+	repos, _ := repo.List(root, nil)
 
 	got := Args(Config{Root: root, Task: "x", Trace: io.Discard}, repos)
 

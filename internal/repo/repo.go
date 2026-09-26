@@ -42,7 +42,12 @@ func (e *AmbiguousError) Error() string {
 func (e *AmbiguousError) Unwrap() error { return ErrAmbiguous }
 
 // An unreadable directory fails the call rather than silently narrowing the scope.
-func List(root string) ([]Repo, error) {
+// Registered workspace roots under root are walked through but never listed,
+// and the depth budget restarts at each of them.
+func List(root string, workspaces []string) ([]Repo, error) {
+	stops := within(root, workspaces)
+	transit := make(map[string]bool)
+
 	var repos []Repo
 
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -62,7 +67,20 @@ func List(root string) ([]Repo, error) {
 			return fs.SkipDir
 		}
 
-		depth, err := depthFrom(root, path)
+		if slices.Contains(stops, path) {
+			return nil
+		}
+
+		leads := leadsTo(path, stops)
+		if transit[filepath.Dir(path)] {
+			if !leads {
+				return fs.SkipDir
+			}
+			transit[path] = true
+			return nil
+		}
+
+		depth, err := depthFrom(nearest(root, stops, path), path)
 		if err != nil {
 			return err
 		}
@@ -74,6 +92,10 @@ func List(root string) ([]Repo, error) {
 			return err
 		}
 		if isRepo || depth >= maxDepth {
+			if leads {
+				transit[path] = true
+				return nil
+			}
 			return fs.SkipDir
 		}
 
@@ -90,8 +112,8 @@ func List(root string) ([]Repo, error) {
 	return repos, nil
 }
 
-func Resolve(root, name string) (string, error) {
-	repos, err := List(root)
+func Resolve(root string, workspaces []string, name string) (string, error) {
+	repos, err := List(root, workspaces)
 	if err != nil {
 		return "", err
 	}
@@ -139,6 +161,34 @@ func match(root string, repos []Repo, name string) ([]Repo, error) {
 	}
 
 	return matches, nil
+}
+
+func within(root string, workspaces []string) []string {
+	var out []string
+	for _, w := range workspaces {
+		if under(w, root) {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+func leadsTo(dir string, stops []string) bool {
+	return slices.ContainsFunc(stops, func(s string) bool { return under(s, dir) })
+}
+
+func nearest(root string, stops []string, path string) string {
+	base := root
+	for _, s := range stops {
+		if under(path, s) && len(s) > len(base) {
+			base = s
+		}
+	}
+	return base
+}
+
+func under(path, root string) bool {
+	return strings.HasPrefix(path, root+string(filepath.Separator))
 }
 
 func depthFrom(root, path string) (int, error) {

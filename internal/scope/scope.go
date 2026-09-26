@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"scopr/internal/registry"
 	"scopr/internal/repo"
 )
 
@@ -46,7 +47,12 @@ func resolveNamed(root string, names []named) (Scope, error) {
 		return Scope{}, ErrEmpty
 	}
 
-	repos, err := repo.List(root)
+	workspaces, err := registry.LivePaths()
+	if err != nil {
+		return Scope{}, err
+	}
+
+	repos, err := repo.List(root, workspaces)
 	if err != nil {
 		return Scope{}, err
 	}

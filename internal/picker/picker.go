@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"scopr/internal/registry"
 	"scopr/internal/repo"
 	"scopr/internal/scope"
 	"scopr/internal/scopefile"
@@ -54,7 +55,12 @@ func pick(root string, s Scope, edit Editor) ([]string, error) {
 }
 
 func Names(root string) ([]string, error) {
-	repos, err := repo.List(root)
+	workspaces, err := registry.LivePaths()
+	if err != nil {
+		return nil, err
+	}
+
+	repos, err := repo.List(root, workspaces)
 	if err != nil {
 		return nil, err
 	}
