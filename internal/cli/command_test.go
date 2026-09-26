@@ -512,7 +512,7 @@ func TestRetryPinsTheWorkspace(t *testing.T) {
 func TestRetryReplacesAGivenWorkspace(t *testing.T) {
 	a := parsed(t, "run", "--workspace", "old", "@blog")
 
-	if got, want := a.Retry("new"), "scopr -w new run @blog"; got != want {
+	if got, want := a.Retry("new"), "scopr run -w new @blog"; got != want {
 		t.Errorf("Retry = %q, want %q", got, want)
 	}
 }
@@ -530,6 +530,14 @@ func TestRetryTerminatesBeforeADashedOperand(t *testing.T) {
 	a := parsed(t, "@blog", "--", "-odd")
 
 	if got, want := a.Retry("w"), "scopr -w w -- @blog -odd"; got != want {
+		t.Errorf("Retry = %q, want %q", got, want)
+	}
+}
+
+func TestRetryPutsTheWorkspaceAfterTheVerb(t *testing.T) {
+	a := parsed(t, "delete", "@blog")
+
+	if got, want := a.Retry("Ananth"), "scopr delete -w Ananth @blog"; got != want {
 		t.Errorf("Retry = %q, want %q", got, want)
 	}
 }

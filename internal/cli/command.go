@@ -85,7 +85,7 @@ func (a Args) Use() string {
 
 // Retry is the invocation as parsed, pinned to workspace, ready to paste.
 func (a Args) Retry(workspace string) string {
-	parts := append([]string{"scopr", "-w", quote(workspace)}, a.Path...)
+	parts := append(append([]string{"scopr"}, a.Path...), "-w", quote(workspace))
 
 	for _, o := range a.Given {
 		if o.Flag.Name == "workspace" {
