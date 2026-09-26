@@ -15,7 +15,7 @@ func env() complete.Env {
 			}
 			return "/w/here"
 		},
-		Scopes: func(workspace string) []complete.Candidate {
+		Scopes: func(workspace string, local bool) []complete.Candidate {
 			return []complete.Candidate{
 				{Value: "surfaces", Desc: "gl-panel gl-api"},
 				{Value: "webapp", Desc: "gl-webapp"},
@@ -198,7 +198,7 @@ func TestWorkspaceFlagNarrowsScopes(t *testing.T) {
 	asked := "unset"
 
 	e := env()
-	e.Scopes = func(workspace string) []complete.Candidate {
+	e.Scopes = func(workspace string, local bool) []complete.Candidate {
 		asked = workspace
 		return nil
 	}
@@ -259,5 +259,55 @@ func TestCandidatesCarryAGroup(t *testing.T) {
 		if found != tc.group {
 			t.Errorf("%q: %s grouped as %q, want %q", tc.argv, tc.value, found, tc.group)
 		}
+	}
+}
+
+func TestOnlyWritesAskForLocalScopes(t *testing.T) {
+	for _, tc := range []struct {
+		argv  []string
+		local bool
+	}{
+		{[]string{"delete", ""}, true},
+		{[]string{"rename", ""}, true},
+		{[]string{"show", ""}, false},
+		{[]string{"run", ""}, false},
+		{[]string{""}, false},
+	} {
+		asked := !tc.local
+
+		e := env()
+		e.Scopes = func(workspace string, local bool) []complete.Candidate {
+			asked = local
+			return nil
+		}
+		complete.Complete(e, tc.argv)
+
+		if asked != tc.local {
+			t.Errorf("%q: local = %v, want %v", tc.argv, asked, tc.local)
+		}
+	}
+}
+
+func TestPinnedScopeInsertsTheWorkspace(t *testing.T) {
+	e := env()
+	e.Scopes = func(workspace string, local bool) []complete.Candidate {
+		return []complete.Candidate{{Value: "blog"}, {Value: "blog", Pin: "Other"}}
+	}
+
+	var got []string
+	for _, c := range complete.Complete(e, []string{"show", "@b"}).Candidates {
+		got = append(got, c.Insert())
+	}
+
+	if want := []string{"@blog", "@blog -w Other"}; !slices.Equal(got, want) {
+		t.Errorf("inserts = %v, want %v", got, want)
+	}
+}
+
+func TestPinnedInsertIsQuoted(t *testing.T) {
+	c := complete.Candidate{Value: "@my blog", Pin: "Ananth's"}
+
+	if got, want := c.Insert(), `'@my blog' -w 'Ananth'\''s'`; got != want {
+		t.Errorf("Insert = %q, want %q", got, want)
 	}
 }
