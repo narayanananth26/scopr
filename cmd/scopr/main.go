@@ -290,6 +290,44 @@ func oneScope(root, query string) (string, int) {
 	return name, 0
 }
 
+func localScope(a cli.Args, root, query string) (string, int) {
+	name, err := scopefile.One(root, query)
+	if err == nil {
+		return name, 0
+	}
+	if !errors.Is(err, scopefile.ErrNoSuchScope) {
+		return "", reportScope(query, err)
+	}
+
+	cwd, cwdErr := os.Getwd()
+	if cwdErr != nil {
+		return "", reportScope(query, err)
+	}
+
+	var others []registry.Workspace
+	if hits, lookErr := resolve.Scope(resolve.Options{Cwd: cwd}, query); lookErr == nil {
+		for _, h := range hits {
+			if h.Workspace.Path != root {
+				others = append(others, h.Workspace)
+			}
+		}
+	}
+	if len(others) == 0 {
+		return "", reportScope(query, err)
+	}
+
+	here := registry.NameOf(root)
+	if len(others) == 1 {
+		fmt.Fprintf(os.Stderr, "no %s%s in %s; it is in %s\n", scope.Prefix, query, here, others[0].Name)
+	} else {
+		fmt.Fprintf(os.Stderr, "no %s%s in %s; it is in %d other workspaces:\n", scope.Prefix, query, here, len(others))
+	}
+	for _, w := range others {
+		fmt.Fprintf(os.Stderr, "  %s\n", a.Retry(w.Name))
+	}
+	return "", 2
+}
+
 func runShow(a cli.Args) int {
 	root, err := findRoot(a)
 	if err != nil {
@@ -357,7 +395,7 @@ func runDelete(a cli.Args) int {
 
 	typed := strings.TrimPrefix(a.Operands[0], scope.Prefix)
 
-	name, code := oneScope(root, typed)
+	name, code := localScope(a, root, typed)
 	if code != 0 {
 		return code
 	}
@@ -391,7 +429,7 @@ func runRename(a cli.Args) int {
 		return 1
 	}
 
-	from, code := oneScope(root, strings.TrimPrefix(a.Operands[0], scope.Prefix))
+	from, code := localScope(a, root, strings.TrimPrefix(a.Operands[0], scope.Prefix))
 	if code != 0 {
 		return code
 	}
