@@ -14,7 +14,6 @@ const marker = ".scopr"
 
 var (
 	ErrNotDirectory  = errors.New("not a directory")
-	ErrNested        = errors.New("workspaces cannot nest")
 	ErrNoSuchEntry   = errors.New("workspace not registered")
 	ErrAmbiguousName = errors.New("ambiguous workspace")
 )
@@ -171,15 +170,6 @@ func Add(path string) error {
 	}
 	if slices.Contains(paths, abs) {
 		return nil
-	}
-
-	for _, p := range paths {
-		if under(abs, p) {
-			return fmt.Errorf("%w: %s is inside %s", ErrNested, abs, p)
-		}
-		if under(p, abs) {
-			return fmt.Errorf("%w: %s contains %s", ErrNested, abs, p)
-		}
 	}
 
 	if err := os.MkdirAll(filepath.Join(abs, marker), 0o755); err != nil {
