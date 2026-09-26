@@ -55,7 +55,7 @@ func findScopeRoot(a cli.Args, name string) (string, error) {
 		for _, h := range hits {
 			fmt.Fprintf(&b, "\n  %s", a.Retry(h.Workspace.Name))
 		}
-		return "", &workspaceAmbiguity{b.String()}
+		return "", &usageError{b.String()}
 	}
 	return hits[0].Workspace.Path, nil
 }
@@ -236,9 +236,9 @@ func runListAll(a cli.Args) int {
 	return 0
 }
 
-type workspaceAmbiguity struct{ text string }
+type usageError struct{ text string }
 
-func (e *workspaceAmbiguity) Error() string { return e.text }
+func (e *usageError) Error() string { return e.text }
 
 func reportScope(query string, err error) int {
 	var ambiguous *scopefile.AmbiguousError
@@ -253,8 +253,8 @@ func reportScope(query string, err error) int {
 	}
 
 	fmt.Fprintln(os.Stderr, err)
-	var spread *workspaceAmbiguity
-	if errors.As(err, &spread) {
+	var misuse *usageError
+	if errors.As(err, &misuse) {
 		return 2
 	}
 	return 1
@@ -562,11 +562,31 @@ func launchIn(a cli.Args, root string, repos []string, name, prompt string) int 
 }
 
 func launchRoot(a cli.Args) (string, string, error) {
+	var root, first string
+
 	for _, o := range a.Operands {
-		if name, ok := strings.CutPrefix(o, scope.Prefix); ok {
-			root, err := findScopeRoot(a, name)
-			return root, name, err
+		name, ok := strings.CutPrefix(o, scope.Prefix)
+		if !ok {
+			continue
 		}
+
+		at, err := findScopeRoot(a, name)
+		if err != nil {
+			return "", name, err
+		}
+
+		if root == "" {
+			root, first = at, name
+			continue
+		}
+		if at != root {
+			return "", name, &usageError{fmt.Sprintf("%s%s is in %s and %s%s is in %s; a launch uses one workspace",
+				scope.Prefix, first, registry.NameOf(root), scope.Prefix, name, registry.NameOf(at))}
+		}
+	}
+
+	if root != "" {
+		return root, first, nil
 	}
 	root, err := findRoot(a)
 	return root, "", err
