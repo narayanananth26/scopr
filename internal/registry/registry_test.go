@@ -404,7 +404,7 @@ func TestRegistryFallsBackToDotConfig(t *testing.T) {
 	}
 }
 
-func TestAddRefusesANestedWorkspace(t *testing.T) {
+func TestAddAcceptsANestedWorkspace(t *testing.T) {
 	isolate(t)
 	outer := workspaceDir(t, "outer")
 	inner := filepath.Join(outer, "a", "inner")
@@ -415,16 +415,17 @@ func TestAddRefusesANestedWorkspace(t *testing.T) {
 	if err := Add(outer); err != nil {
 		t.Fatalf("Add outer: %v", err)
 	}
+	if err := Add(inner); err != nil {
+		t.Fatalf("Add inner: %v", err)
+	}
 
-	if err := Add(inner); !errors.Is(err, ErrNested) {
-		t.Fatalf("Add inner error = %v, want ErrNested", err)
+	if _, err := os.Stat(filepath.Join(inner, marker)); err != nil {
+		t.Errorf("no marker for the nested workspace: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(inner, ".scopr")); err == nil {
-		t.Error("a marker was created for the refused workspace")
-	}
+	assertRegistered(t, outer, inner)
 }
 
-func TestAddRefusesAnEnclosingWorkspace(t *testing.T) {
+func TestAddAcceptsAnEnclosingWorkspace(t *testing.T) {
 	isolate(t)
 	outer := workspaceDir(t, "outer")
 	inner := filepath.Join(outer, "a", "inner")
@@ -435,9 +436,29 @@ func TestAddRefusesAnEnclosingWorkspace(t *testing.T) {
 	if err := Add(inner); err != nil {
 		t.Fatalf("Add inner: %v", err)
 	}
+	if err := Add(outer); err != nil {
+		t.Fatalf("Add outer: %v", err)
+	}
 
-	if err := Add(outer); !errors.Is(err, ErrNested) {
-		t.Fatalf("Add outer error = %v, want ErrNested", err)
+	assertRegistered(t, outer, inner)
+}
+
+func assertRegistered(t *testing.T, want ...string) {
+	t.Helper()
+
+	all, err := List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	got := make([]string, len(all))
+	for i, w := range all {
+		got[i] = w.Path
+	}
+	for _, w := range want {
+		if !slices.Contains(got, w) {
+			t.Errorf("%q not registered; got %v", w, got)
+		}
 	}
 }
 
