@@ -168,6 +168,25 @@ func TestWizardNewNameSavesInThatWorkspace(t *testing.T) {
 	}
 }
 
+func TestWizardPrefilledNameIsANewScope(t *testing.T) {
+	w := pick(wizard().WithName("surf"), "Goodlife").Key("enter")
+
+	if w.Name() != "surf" {
+		t.Errorf("Name = %q, want surf over the longer surfaces", w.Name())
+	}
+}
+
+func TestWizardPrefilledExistingNameLoadsIt(t *testing.T) {
+	w := pick(wizard().WithName("native"), "Goodlife").Key("enter")
+
+	if w.Name() != "" {
+		t.Errorf("Name = %q, want none for an existing scope", w.Name())
+	}
+	if want := []string{"apps/web", "services/api"}; !slices.Equal(w.scope.Chosen, want) {
+		t.Errorf("scope = %v, want %v", w.scope.Chosen, want)
+	}
+}
+
 func TestWizardNameEscapeGoesBackToWorkspace(t *testing.T) {
 	w := pick(wizard(), "scopr").Key("esc")
 

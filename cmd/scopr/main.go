@@ -528,6 +528,11 @@ func noTTY(what string) int {
 }
 
 func runWizard(a cli.Args) int {
+	if a.Bool("force") {
+		fmt.Fprintln(os.Stderr, "the wizard asks instead; drop --force")
+		return 2
+	}
+
 	spaces, entries, err := wizardEntries(a)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -551,6 +556,7 @@ func runWizard(a cli.Args) int {
 
 	wiz.LoadFiles = taggableFiles
 	wiz = wiz.WithPrompt(a.Str("prompt"))
+	wiz = wiz.WithName(strings.TrimPrefix(a.Str("save"), scope.Prefix))
 
 	w, err := ui.RunWizard(wiz)
 	if errors.Is(err, ui.ErrNoTTY) {

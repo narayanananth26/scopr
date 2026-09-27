@@ -144,6 +144,25 @@ func (w Wizard) WithPrompt(s string) Wizard {
 	return w
 }
 
+func (w Wizard) WithName(s string) Wizard {
+	w.name = s
+	w.nameAt = w.exactAt()
+	return w
+}
+
+func (w Wizard) exactAt() int {
+	q := strings.TrimSpace(w.name)
+	if q == "" {
+		return 0
+	}
+	for i, e := range w.matchesName() {
+		if strings.EqualFold(e.Scope, q) {
+			return i
+		}
+	}
+	return 0
+}
+
 func (w Wizard) Done() bool { return w.step == stepDone && !w.Cancelled }
 
 func (w Wizard) existingScope() bool {
@@ -190,6 +209,7 @@ func (w Wizard) keyWorkspace(k string) Wizard {
 		}
 		w.space = w.Spaces[min(w.wsAt, len(w.Spaces)-1)]
 		w.step = stepName
+		w.nameAt = w.exactAt()
 	}
 
 	return w
