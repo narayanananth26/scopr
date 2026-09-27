@@ -142,21 +142,21 @@ var Commands = &Command{
 	Operands: []Kind{KindMember},
 	Min:      0,
 	Max:      -1,
-	Accepts:  flagset(Flags, "workspace", "prompt", "label"),
+	Accepts:  flagset(Flags, "workspace", "prompt", "label", "save", "force"),
 	Children: []*Command{
 		{
 			Name: "run", Use: "<@scope|repo>...",
 			Help:     "start a session, even for a repository named like a command",
 			Operands: []Kind{KindMember},
 			Min:      1, Max: -1,
-			Accepts: flagset(Flags, "workspace", "prompt", "label"),
+			Accepts: flagset(Flags, "workspace", "prompt", "label", "save", "force"),
 		},
 		{
 			Name: "infer", Use: "<task>",
 			Help:     "suggest a scope for the task, then start",
 			Operands: []Kind{KindText},
 			Min:      1, Max: -1, FreeText: true,
-			Accepts: flagset(Flags, "workspace", "prompt", "label", "verbose"),
+			Accepts: flagset(Flags, "workspace", "prompt", "label", "save", "force", "verbose"),
 		},
 		{
 			Name: "list",
@@ -330,6 +330,10 @@ func Bind(root *Command, s Scan) (Args, error) {
 		if !cmd.accepts(o.Flag) {
 			return Args{}, &FlagNotAcceptedError{Token: o.Token, Command: use}
 		}
+	}
+
+	if v := s.Str("save"); s.Has("save") && !strings.HasPrefix(v, scope.Prefix) {
+		return Args{}, &SigilError{Command: use, Corrected: "--save " + scope.Prefix + v}
 	}
 
 	if len(operands) < cmd.Min || (cmd.Max >= 0 && len(operands) > cmd.Max) {

@@ -373,6 +373,27 @@ func runSave(a cli.Args) int {
 	return 0
 }
 
+func saveFirst(a cli.Args, root string, repos []string) int {
+	name, ok := strings.CutPrefix(a.Str("save"), scope.Prefix)
+	if !ok {
+		if a.Bool("force") {
+			fmt.Fprintln(os.Stderr, "--force replaces the scope named with --save; pass --save @name")
+			return 2
+		}
+		return 0
+	}
+
+	if err := saveScope(root, name, repos, a.Bool("force")); err != nil {
+		if errors.Is(err, scopefile.ErrScopeExists) {
+			fmt.Fprintf(os.Stderr, "%s%s already exists in %s; add --force to replace it\n", scope.Prefix, name, registry.NameOf(root))
+			return 1
+		}
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
 func saveScope(root, name string, repos []string, overwrite bool) error {
 	s, err := scope.ResolveArgs(root, repos)
 	if err != nil {
@@ -679,6 +700,9 @@ func label(a cli.Args, repos []string, fallback string) string {
 	if l := a.Str("label"); l != "" {
 		return l
 	}
+	if name := strings.TrimPrefix(a.Str("save"), scope.Prefix); name != "" {
+		return name
+	}
 	if len(repos) == 1 && strings.HasPrefix(repos[0], scope.Prefix) {
 		return strings.TrimPrefix(repos[0], scope.Prefix)
 	}
@@ -693,6 +717,10 @@ func runLaunch(a cli.Args) int {
 
 	repos, code := echoScopes(root, a.Operands)
 	if code != 0 {
+		return code
+	}
+
+	if code := saveFirst(a, root, repos); code != 0 {
 		return code
 	}
 
@@ -759,6 +787,10 @@ func runInfer(a cli.Args) int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
+	}
+
+	if code := saveFirst(a, root, repos); code != 0 {
+		return code
 	}
 
 	prompt := a.Str("prompt")

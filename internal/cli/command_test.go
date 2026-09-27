@@ -160,6 +160,35 @@ func TestBindRejectsUnacceptedFlags(t *testing.T) {
 	}
 }
 
+func TestLaunchCommandsAcceptSave(t *testing.T) {
+	for _, argv := range [][]string{
+		{"--save", "@web", "gl-panel"},
+		{"run", "-s", "@web", "--force", "gl-panel"},
+		{"infer", "--save", "@web", "fix", "the", "build"},
+	} {
+		if a := parsed(t, argv...); a.Str("save") != "@web" {
+			t.Errorf("Parse %q: save = %q, want @web", argv, a.Str("save"))
+		}
+	}
+
+	var refused *cli.FlagNotAcceptedError
+	if err := failed(t, "list", "--save", "@web"); !errors.As(err, &refused) {
+		t.Errorf("list --save: err = %v, want *FlagNotAcceptedError", err)
+	}
+}
+
+func TestSaveFlagRequiresTheSigil(t *testing.T) {
+	err := failed(t, "--save", "web", "gl-panel")
+
+	var sigil *cli.SigilError
+	if !errors.As(err, &sigil) {
+		t.Fatalf("err = %v, want *SigilError", err)
+	}
+	if want := "--save @web"; sigil.Corrected != want {
+		t.Errorf("corrected = %q, want %q", sigil.Corrected, want)
+	}
+}
+
 func TestSaveAcceptsForce(t *testing.T) {
 	if a := parsed(t, "save", "--force", "@n", "a"); !a.Bool("force") {
 		t.Error("save --force did not set force")

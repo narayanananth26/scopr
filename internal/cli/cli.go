@@ -121,6 +121,7 @@ var Flags = MustTable(
 	Flag{Name: "workspace", Short: "w", Arg: "NAME", Help: "which workspace to resolve against"},
 	Flag{Name: "prompt", Short: "p", Arg: "TEXT", Help: "prompt to submit on start"},
 	Flag{Name: "label", Short: "l", Arg: "TEXT", Help: "name the session"},
+	Flag{Name: "save", Short: "s", Arg: "@NAME", Help: "save the scope before starting"},
 	Flag{Name: "verbose", Help: "show the survey's tool calls"},
 	Flag{Name: "json", Help: "machine-readable output"},
 	Flag{Name: "force", Help: "overwrite or remove without asking"},
