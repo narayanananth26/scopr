@@ -373,13 +373,31 @@ func runSave(a cli.Args) int {
 		return 1
 	}
 
-	if err := scopefile.Save(root, name, paths); err != nil {
+	write := scopefile.Save
+	if a.Bool("force") {
+		write = scopefile.Overwrite
+	}
+
+	if err := write(root, name, paths); err != nil {
+		if errors.Is(err, scopefile.ErrScopeExists) {
+			fmt.Fprintf(os.Stderr, "%s%s already exists in %s; replace it with: scopr save --force %s%s %s\n",
+				scope.Prefix, name, registry.NameOf(root), scope.Prefix, name, strings.Join(quoted(repos), " "))
+			return 1
+		}
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 
 	fmt.Fprintf(os.Stderr, "saved %s%s in %s: %s\n", scope.Prefix, name, registry.NameOf(root), strings.Join(paths, " "))
 	return 0
+}
+
+func quoted(words []string) []string {
+	out := make([]string, len(words))
+	for i, w := range words {
+		out[i] = cli.Quote(w)
+	}
+	return out
 }
 
 func runDelete(a cli.Args) int {
