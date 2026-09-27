@@ -31,6 +31,7 @@ scopr runs Claude Code, so `claude` has to be on your `PATH`.
 scopr                             name, scope and prompt, step by step
 scopr @surfaces                   start a session from a saved scope
 scopr gl-panel gl-api             start one from repositories directly
+scopr --save @web gl-panel gl-api save them as a scope, then start
 scopr run list                    start one in a repository named like a command
 
 scopr infer "fix the flaky build" suggest a scope for the task, then start
@@ -63,6 +64,7 @@ scopr --workspace Goodlife save @web gl-webapp
 | `-w, --workspace NAME` | which workspace to resolve against         |
 | `-p, --prompt TEXT`    | prompt to submit on start                  |
 | `-l, --label TEXT`     | name the session                           |
+| `-s, --save @NAME`     | save the scope before starting             |
 | `--json`               | machine-readable output                    |
 | `--force`              | overwrite or remove without asking         |
 | `--verbose`            | with `infer`, show the survey's tool calls |
