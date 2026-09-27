@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"scopr/internal/registry"
@@ -23,7 +24,10 @@ const (
 	schema = `{"type":"object","properties":{"repos":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"reason":{"type":"string"}},"required":["name","reason"],"additionalProperties":false}}},"required":["repos"],"additionalProperties":false}`
 )
 
-var ErrDeclined = errors.New("no repositories suggested")
+var (
+	ErrDeclined    = errors.New("no repositories suggested")
+	ErrNotLoggedIn = errors.New("claude is not logged in")
+)
 
 type Suggestion struct {
 	Name   string `json:"name"`
@@ -55,11 +59,13 @@ func (c Config) model() string {
 
 type runner func(ctx context.Context, cfg Config, args []string) ([]byte, error)
 
+type authCheck func(ctx context.Context, cfg Config) bool
+
 func Infer(ctx context.Context, cfg Config) ([]Suggestion, error) {
-	return infer(ctx, cfg, run)
+	return infer(ctx, cfg, run, loggedIn)
 }
 
-func infer(ctx context.Context, cfg Config, exec runner) ([]Suggestion, error) {
+func infer(ctx context.Context, cfg Config, exec runner, authed authCheck) ([]Suggestion, error) {
 	if strings.TrimSpace(cfg.Task) == "" {
 		return nil, errors.New("dispatch: empty task")
 	}
@@ -78,10 +84,32 @@ func infer(ctx context.Context, cfg Config, exec runner) ([]Suggestion, error) {
 	}
 
 	out, err := exec(ctx, cfg, Args(cfg, repos))
-	if err != nil {
-		return nil, err
+	if err == nil {
+		suggestions, perr := parse(out)
+		if perr == nil || errors.Is(perr, ErrDeclined) {
+			return suggestions, perr
+		}
+		err = perr
 	}
-	return parse(out)
+
+	if ctx.Err() == nil && !authed(ctx, cfg) {
+		return nil, fmt.Errorf("%w; run: %s auth login", ErrNotLoggedIn, filepath.Base(cfg.bin()))
+	}
+	return nil, err
+}
+
+// auth status exits 1 when logged out, so only its output decides. Output
+// that cannot be read counts as logged in rather than as a false alarm.
+func loggedIn(ctx context.Context, cfg Config) bool {
+	out, _ := exec.CommandContext(ctx, cfg.bin(), "auth", "status", "--json").Output()
+
+	var status struct {
+		LoggedIn *bool `json:"loggedIn"`
+	}
+	if json.Unmarshal(out, &status) != nil || status.LoggedIn == nil {
+		return true
+	}
+	return *status.LoggedIn
 }
 
 func Args(cfg Config, repos []repo.Repo) []string {

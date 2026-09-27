@@ -35,10 +35,12 @@ func replies(out string, err error) runner {
 	}
 }
 
+func loggedInAlways(context.Context, Config) bool { return true }
+
 func inferWith(t *testing.T, out string, err error) ([]Suggestion, error) {
 	t.Helper()
 
-	return infer(context.Background(), Config{Root: fixture(t), Task: "trace the checkout call"}, replies(out, err))
+	return infer(context.Background(), Config{Root: fixture(t), Task: "trace the checkout call"}, replies(out, err), loggedInAlways)
 }
 
 func TestParsesStructuredOutput(t *testing.T) {
@@ -116,7 +118,7 @@ func TestGarbageStdoutErrors(t *testing.T) {
 }
 
 func TestEmptyTaskErrors(t *testing.T) {
-	_, err := infer(context.Background(), Config{Root: fixture(t), Task: "  "}, replies("", nil))
+	_, err := infer(context.Background(), Config{Root: fixture(t), Task: "  "}, replies("", nil), loggedInAlways)
 	if err == nil {
 		t.Fatal("infer on an empty task returned no error")
 	}
@@ -199,7 +201,7 @@ func TestContextCancellationPropagates(t *testing.T) {
 		}
 	}
 
-	_, err := infer(ctx, Config{Root: fixture(t), Task: "x"}, slow)
+	_, err := infer(ctx, Config{Root: fixture(t), Task: "x"}, slow, loggedInAlways)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("infer error = %v, want context.Canceled", err)
 	}
@@ -295,7 +297,7 @@ func TestTraceDoesNotChangeResult(t *testing.T) {
 	var b strings.Builder
 	got, err := infer(context.Background(),
 		Config{Root: fixture(t), Task: "x", Trace: &b},
-		replies(stream, nil))
+		replies(stream, nil), loggedInAlways)
 	if err != nil {
 		t.Fatalf("infer: %v", err)
 	}
@@ -348,5 +350,65 @@ func TestRunReportsCancellationOverTheResult(t *testing.T) {
 
 	if _, err := run(ctx, cfg, nil); !errors.Is(err, context.Canceled) {
 		t.Errorf("err = %v, want context.Canceled", err)
+	}
+}
+
+func loggedOut(context.Context, Config) bool { return false }
+
+func TestFailedSurveyWhileLoggedOutSaysHowToLogIn(t *testing.T) {
+	cfg := Config{Root: fixture(t), Task: "x"}
+
+	for _, r := range []runner{
+		replies("", errors.New("run survey: exit status 1")),
+		replies(`{"type":"result","is_error":true,"result":"Not logged in · Please run /login"}`, nil),
+	} {
+		_, err := infer(context.Background(), cfg, r, loggedOut)
+		if !errors.Is(err, ErrNotLoggedIn) {
+			t.Fatalf("err = %v, want ErrNotLoggedIn", err)
+		}
+		if want := "claude is not logged in; run: claude auth login"; err.Error() != want {
+			t.Errorf("message = %q, want %q", err.Error(), want)
+		}
+	}
+}
+
+func TestFailedSurveyWhileLoggedInKeepsItsError(t *testing.T) {
+	boom := errors.New("run survey: exit status 1")
+
+	_, err := infer(context.Background(), Config{Root: fixture(t), Task: "x"}, replies("", boom), loggedInAlways)
+	if !errors.Is(err, boom) {
+		t.Errorf("err = %v, want the survey's own error", err)
+	}
+}
+
+func TestAuthIsOnlyCheckedAfterAFailedSurvey(t *testing.T) {
+	never := func(context.Context, Config) bool {
+		t.Error("auth checked although the survey did not fail")
+		return true
+	}
+	cfg := Config{Root: fixture(t), Task: "x"}
+
+	for _, out := range []string{
+		`{"structured_output":{"repos":[{"name":"apps/web","reason":"x"}]}}`,
+		`{"structured_output":{"repos":[]}}`,
+	} {
+		_, _ = infer(context.Background(), cfg, replies(out, nil), never)
+	}
+	_, _ = infer(context.Background(), Config{Root: t.TempDir(), Task: "x"}, replies("", errors.New("x")), never)
+}
+
+func TestLoggedInReadsAuthStatus(t *testing.T) {
+	for _, tc := range []struct {
+		script string
+		want   bool
+	}{
+		{"echo '{\"loggedIn\": false}'\nexit 1\n", false},
+		{"echo '{\"loggedIn\": true}'\n", true},
+		{"echo 'unknown command: auth'\nexit 1\n", true},
+	} {
+		cfg := Config{Bin: fakeClaude(t, tc.script)}
+		if got := loggedIn(context.Background(), cfg); got != tc.want {
+			t.Errorf("script %q: loggedIn = %v, want %v", tc.script, got, tc.want)
+		}
 	}
 }
