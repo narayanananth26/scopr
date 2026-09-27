@@ -20,7 +20,7 @@ _scopr() {
 
   local -A grouped quoted
   local -i directive=0
-  local line value desc group raw
+  local line value desc group insert
 
   for line in "${lines[@]}"; do
     if [[ $line == ':'<-> ]]; then
@@ -35,10 +35,10 @@ _scopr() {
     desc=${line%%$'\t'*}
     line=${line#*$'\t'}
     group=${line%%$'\t'*}
-    raw=${line#*$'\t'}
+    insert=${line#*$'\t'}
     [[ -n $group ]] || group=candidates
 
-    if [[ $raw == raw ]]; then
+    if [[ $insert == raw ]]; then
       quoted[$group]+="${value//:/\\:}:${desc}"$'\n'
     else
       grouped[$group]+="${value//:/\\:}:${desc}"$'\n'
