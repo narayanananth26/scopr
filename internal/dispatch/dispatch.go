@@ -211,7 +211,7 @@ func parse(out []byte) ([]Suggestion, error) {
 	}
 
 	if env.IsError {
-		return nil, fmt.Errorf("survey failed: %s", env.Result)
+		return nil, surveyFailed(env)
 	}
 	return nil, fmt.Errorf("%w: %s", ErrDeclined, strings.TrimSpace(env.Result))
 }
@@ -277,10 +277,7 @@ func run(ctx context.Context, cfg Config, args []string) ([]byte, error) {
 	if cfg.Trace == nil {
 		out, err := cmd.Output()
 		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			return nil, fmt.Errorf("run survey: %w", err)
+			return nil, exited(ctx, out, err)
 		}
 		return out, nil
 	}
@@ -309,10 +306,22 @@ func stream(ctx context.Context, cmd *exec.Cmd, trace io.Writer) ([]byte, error)
 	}
 
 	if err := cmd.Wait(); err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		return nil, fmt.Errorf("run survey: %w", err)
+		return nil, exited(ctx, collected, err)
 	}
 	return collected, nil
+}
+
+// A failing claude still prints its result, and the result says why.
+func exited(ctx context.Context, out []byte, err error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if env, perr := envelopeFrom(out); perr == nil && env.IsError && env.Result != "" {
+		return surveyFailed(env)
+	}
+	return fmt.Errorf("run survey: %w", err)
+}
+
+func surveyFailed(env envelope) error {
+	return fmt.Errorf("survey failed: %s", strings.TrimSpace(env.Result))
 }

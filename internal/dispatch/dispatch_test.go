@@ -303,3 +303,50 @@ func TestTraceDoesNotChangeResult(t *testing.T) {
 		t.Errorf("got %v, want one suggestion for apps/web", got)
 	}
 }
+
+func fakeClaude(t *testing.T, script string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "claude")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+script), 0o755); err != nil {
+		t.Fatalf("write fake claude: %v", err)
+	}
+	return path
+}
+
+const notLoggedIn = `printf '%s\n' '{"type":"result","subtype":"success","is_error":true,"result":"Not logged in · Please run /login"}'
+exit 1
+`
+
+func TestRunReportsTheResultOfAFailedExit(t *testing.T) {
+	cfg := Config{Root: t.TempDir(), Bin: fakeClaude(t, notLoggedIn)}
+
+	for _, trace := range []io.Writer{nil, io.Discard} {
+		cfg.Trace = trace
+
+		_, err := run(context.Background(), cfg, nil)
+		if err == nil || err.Error() != "survey failed: Not logged in · Please run /login" {
+			t.Errorf("trace %v: err = %v, want the result as the error", trace != nil, err)
+		}
+	}
+}
+
+func TestRunReportsTheExitWithoutAResult(t *testing.T) {
+	cfg := Config{Root: t.TempDir(), Bin: fakeClaude(t, "exit 3\n")}
+
+	_, err := run(context.Background(), cfg, nil)
+	if err == nil || !strings.Contains(err.Error(), "run survey: exit status 3") {
+		t.Errorf("err = %v, want the exit status", err)
+	}
+}
+
+func TestRunReportsCancellationOverTheResult(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	cfg := Config{Root: t.TempDir(), Bin: fakeClaude(t, notLoggedIn)}
+
+	if _, err := run(ctx, cfg, nil); !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
+	}
+}
