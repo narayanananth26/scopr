@@ -117,6 +117,47 @@ func TestSaveRefusesEmpty(t *testing.T) {
 	}
 }
 
+func TestOverwriteReplacesExisting(t *testing.T) {
+	r := root(t)
+
+	if err := scopefile.Save(r, "seam", []string{"web"}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := scopefile.Overwrite(r, "seam", []string{"api", "web"}); err != nil {
+		t.Fatalf("Overwrite: %v", err)
+	}
+
+	got, err := scopefile.Load(r, "seam")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if want := []string{"api", "web"}; !slices.Equal(got, want) {
+		t.Errorf("Load = %v, want %v", got, want)
+	}
+}
+
+func TestOverwriteCreatesMissing(t *testing.T) {
+	r := root(t)
+
+	if err := scopefile.Overwrite(r, "seam", []string{"web"}); err != nil {
+		t.Fatalf("Overwrite: %v", err)
+	}
+	if _, err := scopefile.Load(r, "seam"); err != nil {
+		t.Errorf("Load: %v", err)
+	}
+}
+
+func TestOverwriteRefusesEmptyAndInvalid(t *testing.T) {
+	r := root(t)
+
+	if err := scopefile.Overwrite(r, "seam", nil); !errors.Is(err, scopefile.ErrEmptyScope) {
+		t.Errorf("Overwrite error = %v, want ErrEmptyScope", err)
+	}
+	if err := scopefile.Overwrite(r, "../seam", []string{"web"}); !errors.Is(err, scopefile.ErrInvalidName) {
+		t.Errorf("Overwrite error = %v, want ErrInvalidName", err)
+	}
+}
+
 func TestRejectsPathSeparatorInName(t *testing.T) {
 	r := root(t)
 

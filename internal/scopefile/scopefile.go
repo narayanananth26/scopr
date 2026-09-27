@@ -129,17 +129,25 @@ func Save(root, name string, repos []string) error {
 	if err := ValidName(name); err != nil {
 		return err
 	}
+
+	if _, err := os.Stat(Path(root, name)); err == nil {
+		return fmt.Errorf("%w: %q", ErrScopeExists, name)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("stat scope %q: %w", name, err)
+	}
+
+	return Overwrite(root, name, repos)
+}
+
+func Overwrite(root, name string, repos []string) error {
+	if err := ValidName(name); err != nil {
+		return err
+	}
 	if len(repos) == 0 {
 		return fmt.Errorf("%w: %q", ErrEmptyScope, name)
 	}
 
 	path := Path(root, name)
-
-	if _, err := os.Stat(path); err == nil {
-		return fmt.Errorf("%w: %q", ErrScopeExists, name)
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("stat scope %q: %w", name, err)
-	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create scopes directory: %w", err)
