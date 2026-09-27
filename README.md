@@ -38,6 +38,7 @@ scopr list                        scopes in every workspace, grouped
 scopr list -w Goodlife            scopes in one workspace
 scopr show @surfaces              the repositories a scope names
 scopr save @surfaces gl-panel gl-api
+scopr edit @surfaces              pick its repositories again
 scopr rename @surfaces @edges
 scopr delete @edges
 scopr where                       the workspace you are in

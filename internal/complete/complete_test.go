@@ -269,6 +269,7 @@ func TestOnlyWritesAskForLocalScopes(t *testing.T) {
 	}{
 		{[]string{"delete", ""}, true},
 		{[]string{"rename", ""}, true},
+		{[]string{"edit", ""}, true},
 		{[]string{"show", ""}, false},
 		{[]string{"run", ""}, false},
 		{[]string{""}, false},
