@@ -151,11 +151,18 @@ func TestBindRejectsUnacceptedFlags(t *testing.T) {
 		{"save", "@n", "a", "--json"},
 		{"workspace", "list", "-w", "x"},
 		{"workspace", "add", "--workspace", "x"},
+		{"show", "@n", "--force"},
 	} {
 		var refused *cli.FlagNotAcceptedError
 		if err := failed(t, argv...); !errors.As(err, &refused) {
 			t.Errorf("Parse %q: err = %v, want *FlagNotAcceptedError", argv, err)
 		}
+	}
+}
+
+func TestSaveAcceptsForce(t *testing.T) {
+	if a := parsed(t, "save", "--force", "@n", "a"); !a.Bool("force") {
+		t.Error("save --force did not set force")
 	}
 }
 

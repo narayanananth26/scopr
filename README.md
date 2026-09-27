@@ -63,7 +63,7 @@ scopr --workspace Goodlife save @web gl-webapp
 | `-p, --prompt TEXT`    | prompt to submit on start                  |
 | `-l, --label TEXT`     | name the session                           |
 | `--json`               | machine-readable output                    |
-| `--force`              | with `workspace remove`, skip the question |
+| `--force`              | overwrite or remove without asking         |
 | `--verbose`            | with `infer`, show the survey's tool calls |
 
 Run `scopr help <command>` for one command's usage and the flags it takes.

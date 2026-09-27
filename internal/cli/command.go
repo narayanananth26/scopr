@@ -176,7 +176,7 @@ var Commands = &Command{
 			Help:     "save a scope under that name",
 			Operands: []Kind{KindNewScope, KindRepo},
 			Min:      2, Max: -1,
-			Accepts: flagset(Flags, "workspace"),
+			Accepts: flagset(Flags, "workspace", "force"),
 		},
 		{
 			Name: "delete", Use: "@name",
