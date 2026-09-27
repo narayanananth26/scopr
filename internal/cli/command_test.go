@@ -350,6 +350,7 @@ func TestBindRequiresTheSigil(t *testing.T) {
 	for _, argv := range [][]string{
 		{"save", "web", "gl-panel"},
 		{"delete", "web"},
+		{"edit", "web"},
 		{"show", "web"},
 		{"rename", "old", "@new"},
 		{"rename", "@old", "new"},

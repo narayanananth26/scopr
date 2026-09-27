@@ -459,6 +459,58 @@ func runRename(a cli.Args) int {
 	return 0
 }
 
+func runEdit(a cli.Args) int {
+	root, err := findRoot(a)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	name, code := localScope(a, root, strings.TrimPrefix(a.Operands[0], scope.Prefix))
+	if code != 0 {
+		return code
+	}
+
+	members, err := scopefile.Load(root, name)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	chosen, err := picker.Edit(root, picker.Scope{Names: members, Header: "editing " + scope.Prefix + name})
+	switch {
+	case errors.Is(err, ui.ErrNoTTY):
+		fmt.Fprintf(os.Stderr, "scopr edit needs a terminal; replace the scope instead: scopr save --force %s%s <repo>...\n", scope.Prefix, name)
+		return 2
+	case errors.Is(err, picker.ErrCancelled):
+		fmt.Fprintln(os.Stderr, "cancelled")
+		return 0
+	case err != nil:
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	s, err := scope.Resolve(root, chosen)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	paths, err := s.Paths()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	if err := scopefile.Overwrite(root, name, paths); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	fmt.Fprintf(os.Stderr, "saved %s%s in %s: %s\n", scope.Prefix, name, registry.NameOf(root), strings.Join(paths, " "))
+	return 0
+}
+
 func noTTY(what string) int {
 	fmt.Fprintf(os.Stderr, "%s needs a terminal; name the repositories instead: scopr <@scope|repo>...\n", what)
 	return 2
@@ -1152,6 +1204,9 @@ func dispatchArgs(a cli.Args) int {
 
 	case "rename":
 		return runRename(a)
+
+	case "edit":
+		return runEdit(a)
 
 	case "where":
 		return runWhere(a)

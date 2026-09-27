@@ -187,6 +187,14 @@ var Commands = &Command{
 			Writes:  true,
 		},
 		{
+			Name: "edit", Use: "@name",
+			Help:     "pick a scope's repositories again",
+			Operands: []Kind{KindScope},
+			Min:      1, Max: 1,
+			Accepts: flagset(Flags, "workspace"),
+			Writes:  true,
+		},
+		{
 			Name: "rename", Use: "@old @new",
 			Help:     "rename a saved scope",
 			Operands: []Kind{KindScope, KindNewScope},
