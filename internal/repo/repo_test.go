@@ -350,3 +350,33 @@ func TestFailsWhenRootIsUnreadable(t *testing.T) {
 		t.Errorf("List error = %v, want permission denied", err)
 	}
 }
+
+func TestResolvesHiddenDirectories(t *testing.T) {
+	root := fixture(t)
+	if err := os.MkdirAll(filepath.Join(root, ".config", "zsh"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	for _, name := range []string{".config", filepath.Join(".config", "zsh")} {
+		got, err := repo.Resolve(root, nil, name)
+		if err != nil {
+			t.Fatalf("Resolve(%q): %v", name, err)
+		}
+		if want := filepath.Join(root, name); got != want {
+			t.Errorf("Resolve(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestResolveRejectsFilesAndEscapes(t *testing.T) {
+	root := fixture(t)
+	if err := os.WriteFile(filepath.Join(root, ".zshrc"), nil, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	for _, name := range []string{".zshrc", "..", filepath.Join("..", "elsewhere")} {
+		if _, err := repo.Resolve(root, nil, name); !errors.Is(err, repo.ErrNoSuchRepo) {
+			t.Errorf("Resolve(%q) error = %v, want ErrNoSuchRepo", name, err)
+		}
+	}
+}

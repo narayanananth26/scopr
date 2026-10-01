@@ -134,12 +134,25 @@ func ResolveIn(root string, repos []Repo, name string) (string, error) {
 
 	switch len(matches) {
 	case 0:
+		if path, ok := existing(root, name); ok {
+			return path, nil
+		}
 		return "", fmt.Errorf("%w: %q", ErrNoSuchRepo, name)
 	case 1:
 		return matches[0].Path, nil
 	default:
 		return "", &AmbiguousError{Name: name, Matches: matches}
 	}
+}
+
+func existing(root, name string) (string, bool) {
+	path := filepath.Join(root, name)
+	if !under(path, root) {
+		return "", false
+	}
+
+	info, err := os.Stat(path)
+	return path, err == nil && info.IsDir()
 }
 
 func match(root string, repos []Repo, name string) ([]Repo, error) {
