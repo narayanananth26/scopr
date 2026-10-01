@@ -301,3 +301,52 @@ func TestReachesChildWorkspaceInsideRepo(t *testing.T) {
 		t.Errorf("List descended into a repo beyond the path to a workspace; got %v", got)
 	}
 }
+
+func lock(t *testing.T, path string, mode os.FileMode) {
+	t.Helper()
+
+	if os.Geteuid() == 0 {
+		t.Skip("permissions do not apply to root")
+	}
+	if err := os.Chmod(path, mode); err != nil {
+		t.Fatalf("chmod %s: %v", path, err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o755) })
+}
+
+func TestSkipsPermissionDeniedDirectories(t *testing.T) {
+	for name, tc := range map[string]struct {
+		mode   os.FileMode
+		listed bool
+	}{
+		"cannot inspect": {mode: 0o000, listed: false},
+		"cannot read":    {mode: 0o100, listed: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := fixture(t)
+			locked := filepath.Join(root, "locked")
+			if err := os.Mkdir(locked, 0o755); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+			lock(t, locked, tc.mode)
+
+			got := listRels(t, root)
+
+			if slices.Contains(got, "locked") != tc.listed {
+				t.Errorf("List listed locked = %v, want %v; got %v", !tc.listed, tc.listed, got)
+			}
+			if !slices.Contains(got, "apps/web") {
+				t.Errorf("List dropped readable repos; got %v", got)
+			}
+		})
+	}
+}
+
+func TestFailsWhenRootIsUnreadable(t *testing.T) {
+	root := fixture(t)
+	lock(t, root, 0o000)
+
+	if _, err := repo.List(root, nil); !errors.Is(err, os.ErrPermission) {
+		t.Errorf("List error = %v, want permission denied", err)
+	}
+}

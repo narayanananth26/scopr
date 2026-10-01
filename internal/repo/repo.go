@@ -41,7 +41,6 @@ func (e *AmbiguousError) Error() string {
 
 func (e *AmbiguousError) Unwrap() error { return ErrAmbiguous }
 
-// An unreadable directory fails the call rather than silently narrowing the scope.
 // Registered workspace roots under root are walked through but never listed,
 // and the depth budget restarts at each of them.
 func List(root string, workspaces []string) ([]Repo, error) {
@@ -52,6 +51,9 @@ func List(root string, workspaces []string) ([]Repo, error) {
 
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			if path != root && errors.Is(err, fs.ErrPermission) {
+				return fs.SkipDir
+			}
 			return fmt.Errorf("scan %q: %w", path, err)
 		}
 
@@ -85,12 +87,16 @@ func List(root string, workspaces []string) ([]Repo, error) {
 			return err
 		}
 
-		repos = append(repos, Repo{Name: d.Name(), Path: path})
-
 		isRepo, err := hasGitDir(path)
+		if errors.Is(err, fs.ErrPermission) {
+			return fs.SkipDir
+		}
 		if err != nil {
 			return err
 		}
+
+		repos = append(repos, Repo{Name: d.Name(), Path: path})
+
 		if isRepo || depth >= maxDepth {
 			if leads {
 				transit[path] = true
