@@ -167,3 +167,49 @@ func TestNameIsTheBaseName(t *testing.T) {
 		t.Errorf("Name = %q, want %q", got.Primary().Name, want)
 	}
 }
+
+func TestSuggestsPathUnderCwd(t *testing.T) {
+	root := fixture(t)
+	if err := os.MkdirAll(filepath.Join(root, ".config", "zsh"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	t.Chdir(filepath.Join(root, ".config"))
+
+	_, err := scope.Resolve(root, []string{"zsh"})
+
+	if !errors.Is(err, repo.ErrNoSuchRepo) {
+		t.Fatalf("Resolve error = %v, want ErrNoSuchRepo", err)
+	}
+	if want := `did you mean ".config/zsh"?`; !strings.Contains(err.Error(), want) {
+		t.Errorf("Resolve error = %q, want it to contain %q", err, want)
+	}
+}
+
+func TestSuggestsNothingWhenCwdLacksTheName(t *testing.T) {
+	root := fixture(t)
+	t.Chdir(filepath.Join(root, "apps"))
+
+	_, err := scope.Resolve(root, []string{"zsh"})
+
+	if err == nil || strings.Contains(err.Error(), "did you mean") {
+		t.Errorf("Resolve error = %v, want no suggestion", err)
+	}
+}
+
+func TestSuggestsNothingOutsideRoot(t *testing.T) {
+	root := fixture(t)
+	outside, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolving temp dir: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(outside, "zsh"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	t.Chdir(outside)
+
+	_, err = scope.Resolve(root, []string{"zsh"})
+
+	if err == nil || strings.Contains(err.Error(), "did you mean") {
+		t.Errorf("Resolve error = %v, want no suggestion", err)
+	}
+}

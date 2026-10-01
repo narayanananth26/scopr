@@ -3,7 +3,9 @@ package scope
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"scopr/internal/registry"
 	"scopr/internal/repo"
@@ -90,6 +92,9 @@ func resolveNamed(root string, names []named) (Scope, error) {
 		if n.from == "" || !exact {
 			path, err = repo.ResolveIn(root, repos, n.name)
 			if err != nil {
+				if n.from == "" {
+					err = hint(root, n.name, err)
+				}
 				problems = append(problems, n.attribute(err))
 				continue
 			}
@@ -109,6 +114,32 @@ func resolveNamed(root string, names []named) (Scope, error) {
 	}
 
 	return Scope{Root: root, Repos: resolved}, nil
+}
+
+func hint(root, name string, err error) error {
+	if !errors.Is(err, repo.ErrNoSuchRepo) {
+		return err
+	}
+
+	cwd, wdErr := os.Getwd()
+	if wdErr != nil {
+		return err
+	}
+	if resolved, evalErr := filepath.EvalSymlinks(cwd); evalErr == nil {
+		cwd = resolved
+	}
+
+	candidate := filepath.Join(cwd, name)
+	if info, statErr := os.Stat(candidate); statErr != nil || !info.IsDir() {
+		return err
+	}
+
+	rel, relErr := filepath.Rel(root, candidate)
+	if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return err
+	}
+
+	return fmt.Errorf("%w; did you mean %q?", err, filepath.ToSlash(rel))
 }
 
 func duplicateError(first, second named, path string) error {
