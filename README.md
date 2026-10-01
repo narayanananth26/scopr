@@ -30,15 +30,15 @@ scopr runs Claude Code, so `claude` has to be on your `PATH`.
 ```sh
 scopr                             name, scope and prompt, step by step
 scopr @surfaces                   start a session from a saved scope
-scopr gl-panel gl-api             start one from repositories directly
-scopr --save @web gl-panel gl-api save them as a scope, then start
+scopr webapp backend              start one from repositories directly
+scopr --save @web webapp backend  save them as a scope, then start
 scopr run list                    start one in a repository named like a command
 
 scopr infer "fix the flaky build" suggest a scope for the task, then start
 scopr list                        scopes in every workspace, grouped
-scopr list -w Goodlife            scopes in one workspace
+scopr list -w Projects            scopes in one workspace
 scopr show @surfaces              the repositories a scope names
-scopr save @surfaces gl-panel gl-api
+scopr save @surfaces webapp extension
 scopr edit @surfaces              pick its repositories again
 scopr rename @surfaces @edges
 scopr delete @edges
@@ -46,7 +46,7 @@ scopr where                       the workspace you are in
 
 scopr workspace add .             register a directory as a workspace
 scopr workspace list
-scopr workspace remove Goodlife   forget one and delete its scopes
+scopr workspace remove Projects   forget one and delete its scopes
 ```
 
 A scope is always written with `@`. The first repository in a scope becomes the
@@ -55,8 +55,8 @@ session's working directory, so order matters.
 Flags may appear anywhere, and `--` ends them:
 
 ```sh
-scopr save @web gl-webapp --workspace Goodlife
-scopr --workspace Goodlife save @web gl-webapp
+scopr save @web webapp --workspace Projects
+scopr --workspace Projects save @web webapp
 ```
 
 | flag                   |                                            |
