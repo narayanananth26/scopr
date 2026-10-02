@@ -377,18 +377,32 @@ func TestWalksHiddenWorkspaces(t *testing.T) {
 	}
 }
 
-func TestResolvesHiddenDirectories(t *testing.T) {
+func TestResolveRejectsUnregisteredHiddenDirectories(t *testing.T) {
 	root := fixture(t)
 	if err := os.MkdirAll(filepath.Join(root, ".config", "zsh"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	for _, name := range []string{".config", filepath.Join(".config", "zsh")} {
-		got, err := repo.Resolve(root, nil, name)
+	for _, name := range []string{".config", filepath.Join(".config", "zsh"), "zsh"} {
+		if _, err := repo.Resolve(root, nil, name); !errors.Is(err, repo.ErrNoSuchRepo) {
+			t.Errorf("Resolve(%q) error = %v, want ErrNoSuchRepo", name, err)
+		}
+	}
+}
+
+func TestResolvesInsideHiddenWorkspace(t *testing.T) {
+	root := fixture(t)
+	if err := os.MkdirAll(filepath.Join(root, ".config", "zsh"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	workspaces := []string{filepath.Join(root, ".config")}
+
+	for _, name := range []string{"zsh", filepath.Join(".config", "zsh")} {
+		got, err := repo.Resolve(root, workspaces, name)
 		if err != nil {
 			t.Fatalf("Resolve(%q): %v", name, err)
 		}
-		if want := filepath.Join(root, name); got != want {
+		if want := filepath.Join(root, ".config", "zsh"); got != want {
 			t.Errorf("Resolve(%q) = %q, want %q", name, got, want)
 		}
 	}
