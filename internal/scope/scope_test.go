@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"scopr/internal/registry"
 	"scopr/internal/repo"
 	"scopr/internal/scope"
 )
@@ -182,6 +183,28 @@ func TestSuggestsPathUnderCwd(t *testing.T) {
 	}
 	if want := `did you mean "apps/web/zsh"?`; !strings.Contains(err.Error(), want) {
 		t.Errorf("Resolve error = %q, want it to contain %q", err, want)
+	}
+}
+
+func TestResolvesInsideRegisteredHiddenWorkspace(t *testing.T) {
+	root := fixture(t)
+	hidden := filepath.Join(root, ".config")
+	if err := os.MkdirAll(filepath.Join(hidden, "zsh"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := registry.Add(hidden); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	for _, name := range []string{"zsh", ".config/zsh"} {
+		got, err := scope.Resolve(root, []string{name})
+		if err != nil {
+			t.Fatalf("Resolve(%q): %v", name, err)
+		}
+		if want := filepath.Join(hidden, "zsh"); got.Primary().Path != want {
+			t.Errorf("Resolve(%q) path = %q, want %q", name, got.Primary().Path, want)
+		}
 	}
 }
 
