@@ -351,6 +351,32 @@ func TestFailsWhenRootIsUnreadable(t *testing.T) {
 	}
 }
 
+func TestWalksHiddenWorkspaces(t *testing.T) {
+	root := fixture(t)
+	for _, d := range []string{".config/zsh", ".config/nvim/.git", ".config/.claude/agents"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+
+	repos, err := repo.List(root, []string{filepath.Join(root, ".config")})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	got := rels(t, root, repos)
+
+	for _, want := range []string{".config/zsh", ".config/nvim"} {
+		if !slices.Contains(got, want) {
+			t.Errorf("List missing %q; got %v", want, got)
+		}
+	}
+	for _, unwanted := range []string{".config", ".config/.claude", ".config/.claude/agents"} {
+		if slices.Contains(got, unwanted) {
+			t.Errorf("List contains %q; got %v", unwanted, got)
+		}
+	}
+}
+
 func TestResolvesHiddenDirectories(t *testing.T) {
 	root := fixture(t)
 	if err := os.MkdirAll(filepath.Join(root, ".config", "zsh"), 0o755); err != nil {

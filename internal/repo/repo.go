@@ -65,12 +65,12 @@ func List(root string, workspaces []string) ([]Repo, error) {
 			return nil
 		}
 
-		if strings.HasPrefix(d.Name(), ".") {
-			return fs.SkipDir
-		}
-
 		if slices.Contains(stops, path) {
 			return nil
+		}
+
+		if strings.HasPrefix(d.Name(), ".") {
+			return fs.SkipDir
 		}
 
 		leads := leadsTo(path, stops)
