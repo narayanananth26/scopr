@@ -139,7 +139,23 @@ func hint(root, name string, err error) error {
 		return err
 	}
 
+	if hidden := hiddenAncestor(root, rel); hidden != "" {
+		return fmt.Errorf("%w; %s is hidden; register it with: scopr workspace add %q",
+			err, filepath.Base(hidden), hidden)
+	}
+
 	return fmt.Errorf("%w; did you mean %q?", err, filepath.ToSlash(rel))
+}
+
+func hiddenAncestor(root, rel string) string {
+	path := root
+	for seg := range strings.SplitSeq(rel, string(filepath.Separator)) {
+		path = filepath.Join(path, seg)
+		if strings.HasPrefix(seg, ".") {
+			return path
+		}
+	}
+	return ""
 }
 
 func duplicateError(first, second named, path string) error {

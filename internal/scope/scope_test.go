@@ -170,6 +170,23 @@ func TestNameIsTheBaseName(t *testing.T) {
 
 func TestSuggestsPathUnderCwd(t *testing.T) {
 	root := fixture(t)
+	if err := os.MkdirAll(filepath.Join(root, "apps", "web", "zsh"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	t.Chdir(filepath.Join(root, "apps", "web"))
+
+	_, err := scope.Resolve(root, []string{"zsh"})
+
+	if !errors.Is(err, repo.ErrNoSuchRepo) {
+		t.Fatalf("Resolve error = %v, want ErrNoSuchRepo", err)
+	}
+	if want := `did you mean "apps/web/zsh"?`; !strings.Contains(err.Error(), want) {
+		t.Errorf("Resolve error = %q, want it to contain %q", err, want)
+	}
+}
+
+func TestSuggestsRegisteringHiddenWorkspace(t *testing.T) {
+	root := fixture(t)
 	if err := os.MkdirAll(filepath.Join(root, ".config", "zsh"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -180,8 +197,12 @@ func TestSuggestsPathUnderCwd(t *testing.T) {
 	if !errors.Is(err, repo.ErrNoSuchRepo) {
 		t.Fatalf("Resolve error = %v, want ErrNoSuchRepo", err)
 	}
-	if want := `did you mean ".config/zsh"?`; !strings.Contains(err.Error(), want) {
+	want := `.config is hidden; register it with: scopr workspace add "` + filepath.Join(root, ".config") + `"`
+	if !strings.Contains(err.Error(), want) {
 		t.Errorf("Resolve error = %q, want it to contain %q", err, want)
+	}
+	if strings.Contains(err.Error(), "did you mean") {
+		t.Errorf("Resolve error = %q, want no path suggestion", err)
 	}
 }
 
